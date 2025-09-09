@@ -10,6 +10,7 @@ import { Logs } from "./pages/Logs";
 import { ServerDetails } from "./pages/ServerDetails";
 import { Settings } from "./pages/Settings";
 import { ExternalServers } from "./pages/ExternalServers";
+import { Credentials } from "./pages/Credentials";
 
 export default function App() {
   const [route, setRoute] = React.useState(window.location.hash || "#/dashboard");
@@ -74,6 +75,7 @@ export default function App() {
           {route.startsWith("#/clients") && <Clients />}
           {route.startsWith("#/logs") && <Logs slug={currentSlug} />}
           {route.startsWith("#/external") && <ExternalServers />}
+          {route.startsWith("#/credentials") && <Credentials />}
           {route.startsWith("#/settings") && <Settings />}
         </ErrorBoundary>
       </main>
