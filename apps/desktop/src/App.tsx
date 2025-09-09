@@ -73,6 +73,7 @@ export default function App() {
           {route.startsWith("#/server/") && <ServerDetails slug={currentSlug!} />}
           {route.startsWith("#/clients") && <Clients />}
           {route.startsWith("#/logs") && <Logs slug={currentSlug} />}
+          {route.startsWith("#/external") && <ExternalServers />}
           {route.startsWith("#/settings") && <Settings />}
         </ErrorBoundary>
       </main>

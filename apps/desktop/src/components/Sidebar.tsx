@@ -228,9 +228,9 @@ export function Sidebar({
         </NavButton>
         <NavButton href="#/market" icon={ShoppingBag}>
           Marketplace
+        <NavButton href="#/external" icon={Globe}>
+          External
         </NavButton>
-        <NavButton href="#/market" icon={ShoppingBag}>
-          Marketplace
         </NavButton>
 
         <Separator className="my-3" />
