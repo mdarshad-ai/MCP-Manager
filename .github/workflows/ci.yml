@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Go) — build & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Go cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download deps
+        run: |
+          cd services/manager
+          go mod download
+
+      - name: Build daemon
+        run: |
+          make build-backend
+
+      - name: Go tests
+        run: |
+          cd services/manager
+          go test -v ./...
+
+  frontend:
+    name: Frontend (Web) — build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps (workspaces)
+        run: npm ci --workspaces --include-workspace-root
+
+      - name: Build desktop app
+        run: npm -w apps/desktop run build
+
+  e2e-smoke:
+    name: E2E — external MCP smoke tests
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build daemon
+        run: |
+          make build-backend
+
+      - name: Start daemon
+        run: |
+          ./services/manager/bin/mcp-manager &
+          echo $! > mcp.pid
+
+      - name: Wait for health
+        shell: bash
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:38018/healthz >/dev/null; then
+              echo "daemon healthy"; exit 0; fi; sleep 1; done
+          echo "daemon did not become healthy" >&2; exit 1
+
+      - name: Run smoke tests
+        run: |
+          bash external-mcp-smoke-tests.sh | tee smoke.log
+
+      - name: Stop daemon
+        if: always()
+        run: |
+          if [ -f mcp.pid ]; then kill $(cat mcp.pid) || true; fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: smoke.log
+
