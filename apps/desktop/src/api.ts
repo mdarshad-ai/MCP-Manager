@@ -12,7 +12,7 @@ export async function fetchServers(): Promise<ServerRow[]> {
   return r.json();
 }
 
-export async function serverAction(slug: string, action: "restart" | "stop"): Promise<void> {
+export async function serverAction(slug: string, action: "start" | "stop" | "restart"): Promise<void> {
   const r = await fetch(`${BASE}/v1/servers/${encodeURIComponent(slug)}/actions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -465,7 +465,7 @@ export async function createExternalServer(server: Omit<ExternalServerConfig, "i
 }
 
 export async function updateExternalServer(id: string, server: Partial<ExternalServerConfig>): Promise<ExternalServerConfig> {
-  const r = await fetch(`${BASE}/v1/external/${encodeURIComponent(id)}`, {
+  const r = await fetch(`${BASE}/v1/external/servers/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(server),
@@ -475,7 +475,7 @@ export async function updateExternalServer(id: string, server: Partial<ExternalS
 }
 
 export async function deleteExternalServer(id: string): Promise<void> {
-  const r = await fetch(`${BASE}/v1/external/${encodeURIComponent(id)}`, {
+  const r = await fetch(`${BASE}/v1/external/servers/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(`external server delete ${r.status}`);
