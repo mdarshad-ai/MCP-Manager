@@ -1,0 +1,30 @@
+# OS
+.DS_Store
+
+# Packages
+**/node_modules/
+**/.pnpm/
+
+# Build artifacts
+build/
+dist/
+apps/**/dist/
+**/.vite/
+**/.cache/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+# Go build outputs
+services/**/manager
+services/**/mcp-manager
+**/*.exe
+**/*.dll
+**/*.so
+**/*.dylib

@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/mcp/registry.schema.json",
+  "title": "MCP Registry",
+  "type": "object",
+  "$defs": {
+    "apiKeyCredentials": {
+      "type": "object",
+      "required": ["apiKey"],
+      "properties": {
+        "apiKey": {"type": "string"},
+        "apiKeyHeader": {"type": "string", "default": "Authorization"}
+      }
+    },
+    "oauth2Credentials": {
+      "type": "object",
+      "required": ["clientId", "clientSecret"],
+      "properties": {
+        "clientId": {"type": "string"},
+        "clientSecret": {"type": "string"},
+        "tokenUrl": {"type": "string", "format": "uri"},
+        "scope": {"type": "string"},
+        "accessToken": {"type": "string"},
+        "refreshToken": {"type": "string"},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "basicCredentials": {
+      "type": "object",
+      "required": ["username", "password"],
+      "properties": {
+        "username": {"type": "string"},
+        "password": {"type": "string"}
+      }
+    }
+  },
+  "required": ["version", "servers"],
+  "properties": {
+    "version": {"type": "string"},
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "slug", "source", "runtime", "health", "clients"],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "runtime": {
+                  "properties": {
+                    "kind": {"const": "external"}
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": ["external"],
+              "properties": {
+                "external": {
+                  "required": ["provider", "apiEndpoint", "authType", "credentialRef"]
+                }
+              }
+            },
+            "else": {
+              "required": ["entry"]
+            }
+          }
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "slug": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+          "source": {
+            "type": "object",
+            "required": ["type", "uri"],
+            "properties": {
+              "type": {"enum": ["desktop-extension", "git", "npm", "pip", "cargo", "go", "binary"]},
+              "uri": {"type": "string"}
+            }
+          },
+          "runtime": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": {"enum": ["node", "python", "rust", "go", "binary", "external"]},
+              "node": {"type": "object", "properties": {"packageManager": {"enum": ["npm", "pnpm", "yarn"]}}},
+              "python": {"type": "object", "properties": {"manager": {"enum": ["uv", "pipx", "pip"]}, "venv": {"type": "boolean"}}}
+            }
+          },
+          "entry": {
+            "type": "object",
+            "required": ["transport", "command"],
+            "properties": {
+              "transport": {"enum": ["stdio", "http"]},
+              "command": {"type": "string"},
+              "args": {"type": "array", "items": {"type": "string"}},
+              "env": {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+                "properties": {"fromVault": {"type": "array", "items": {"type": "string"}}}
+              }
+            }
+          },
+          "permissions": {
+            "type": "object",
+            "properties": {
+              "fs": {"type": "array", "items": {"type": "string"}},
+              "net": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "autostart": {
+            "type": "object",
+            "properties": {"enabled": {"type": "boolean"}, "scope": {"type": "string"}}
+          },
+          "health": {
+            "type": "object",
+            "required": ["probe", "method", "intervalSec", "timeoutSec", "restartPolicy"],
+            "properties": {
+              "probe": {"type": "string"},
+              "method": {"type": "string"},
+              "intervalSec": {"type": "integer", "minimum": 1},
+              "timeoutSec": {"type": "integer", "minimum": 1},
+              "restartPolicy": {"enum": ["always", "on-failure", "never"]},
+              "maxRestarts": {"type": "integer", "minimum": 0}
+            }
+          },
+          "clients": {
+            "type": "object",
+            "properties": {
+              "claudeDesktop": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+              "cursorGlobal": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+              "continue": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
+            }
+          },
+          "external": {
+            "type": "object",
+            "properties": {
+              "provider": {"type": "string"},
+              "apiEndpoint": {"type": "string", "format": "uri"},
+              "authType": {"enum": ["api_key", "oauth2", "basic"]},
+              "credentialRef": {"type": "string"},
+              "credentials": {
+                "oneOf": [
+                  {
+                    "if": {
+                      "properties": {"authType": {"const": "api_key"}}
+                    },
+                    "then": {"$ref": "#/$defs/apiKeyCredentials"}
+                  },
+                  {
+                    "if": {
+                      "properties": {"authType": {"const": "oauth2"}}
+                    },
+                    "then": {"$ref": "#/$defs/oauth2Credentials"}
+                  },
+                  {
+                    "if": {
+                      "properties": {"authType": {"const": "basic"}}
+                    },
+                    "then": {"$ref": "#/$defs/basicCredentials"}
+                  }
+                ]
+              },
+              "config": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "webhookUrl": {"type": "string", "format": "uri"},
+              "status": {
+                "type": "object",
+                "required": ["state"],
+                "properties": {
+                  "state": {"enum": ["connected", "disconnected", "error", "pending"]},
+                  "message": {"type": "string"},
+                  "lastChecked": {"type": "string", "format": "date-time"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
