@@ -1,4 +1,4 @@
-import { Circle, Download, FileText, LayoutDashboard, Menu, Server, Settings, Users, Globe, ChevronDown, ChevronRight, ShoppingBag } from "lucide-react";
+import { Circle, Download, FileText, LayoutDashboard, Menu, Server, Settings, Users, Globe, ChevronDown, ChevronRight, ShoppingBag, KeyRound } from "lucide-react";
 import React from "react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -228,9 +228,9 @@ export function Sidebar({
         </NavButton>
         <NavButton href="#/market" icon={ShoppingBag}>
           Marketplace
+        <NavButton href="#/external" icon={Globe}>
+          External
         </NavButton>
-        <NavButton href="#/market" icon={ShoppingBag}>
-          Marketplace
         </NavButton>
 
         <Separator className="my-3" />
@@ -257,6 +257,9 @@ export function Sidebar({
 
         <NavButton href="#/clients" icon={Users}>
           Clients
+        </NavButton>
+        <NavButton href="#/credentials" icon={KeyRound}>
+          Credentials
         </NavButton>
         <NavButton href="#/logs" icon={FileText}>
           Logs

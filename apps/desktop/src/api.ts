@@ -12,7 +12,7 @@ export async function fetchServers(): Promise<ServerRow[]> {
   return r.json();
 }
 
-export async function serverAction(slug: string, action: "restart" | "stop"): Promise<void> {
+export async function serverAction(slug: string, action: "start" | "stop" | "restart"): Promise<void> {
   const r = await fetch(`${BASE}/v1/servers/${encodeURIComponent(slug)}/actions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -465,7 +465,7 @@ export async function createExternalServer(server: Omit<ExternalServerConfig, "i
 }
 
 export async function updateExternalServer(id: string, server: Partial<ExternalServerConfig>): Promise<ExternalServerConfig> {
-  const r = await fetch(`${BASE}/v1/external/${encodeURIComponent(id)}`, {
+  const r = await fetch(`${BASE}/v1/external/servers/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(server),
@@ -475,7 +475,7 @@ export async function updateExternalServer(id: string, server: Partial<ExternalS
 }
 
 export async function deleteExternalServer(id: string): Promise<void> {
-  const r = await fetch(`${BASE}/v1/external/${encodeURIComponent(id)}`, {
+  const r = await fetch(`${BASE}/v1/external/servers/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(`external server delete ${r.status}`);
@@ -497,5 +497,48 @@ export async function testExternalConnection(slug: string): Promise<{
 export async function getProviderTemplates(): Promise<ExternalServerProvider[]> {
   const r = await fetch(`${BASE}/v1/external/providers`);
   if (!r.ok) throw new Error(`provider templates fetch ${r.status}`);
+  return r.json();
+}
+
+// Credentials API helpers
+export async function credsStore(provider: string, credentials: Record<string, string>) {
+  const r = await fetch(`${BASE}/v1/credentials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, credentials }),
+  });
+  if (!r.ok) throw new Error(`credentials store ${r.status}`);
+  return r.json();
+}
+
+export async function credsGetRequirements(provider: string) {
+  const r = await fetch(`${BASE}/v1/credentials/${encodeURIComponent(provider)}`);
+  if (!r.ok) throw new Error(`credentials requirements ${r.status}`);
+  return r.json();
+}
+
+export async function credsUpdate(provider: string, credentials: Record<string, string>) {
+  const r = await fetch(`${BASE}/v1/credentials/${encodeURIComponent(provider)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credentials }),
+  });
+  if (!r.ok) throw new Error(`credentials update ${r.status}`);
+  return r.json();
+}
+
+export async function credsDelete(provider: string) {
+  const r = await fetch(`${BASE}/v1/credentials/${encodeURIComponent(provider)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`credentials delete ${r.status}`);
+  return r.json();
+}
+
+export async function credsValidate(provider: string, credentials: Record<string, string>) {
+  const r = await fetch(`${BASE}/v1/credentials/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, credentials }),
+  });
+  if (!r.ok) throw new Error(`credentials validate ${r.status}`);
   return r.json();
 }

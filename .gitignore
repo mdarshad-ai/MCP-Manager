@@ -22,9 +22,11 @@ yarn-error.log*
 .vscode/
 .idea/
 # Go build outputs
-services/**/manager
-services/**/mcp-manager
 **/*.exe
 **/*.dll
 **/*.so
 **/*.dylib
+
+# Go binaries (bin)
+services/**/bin/mcp-manager
+services/**/bin/manager
