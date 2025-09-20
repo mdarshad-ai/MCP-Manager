@@ -224,38 +224,24 @@ func (s *Server) handleCreateExternalServer(w http.ResponseWriter, r *http.Reque
 		DisplayName:   displayName,
 		APIEndpoint:   provider.BaseURL,
 		AuthType:      string(provider.AuthType),
-		CredentialRef: ""
+		CredentialRef: "",
 		Config:        req.Config,
 		Status: registry.ExternalStatus{
 			State:   "inactive",
 			Message: "Created but not tested",
 		},
-		// Store credentials temporarily - should be moved to secure storage
-		Credentials: req.Credentials,
 	}
 
 	// Persist credentials securely and set credential reference
-	credentialRef := fmt.Sprintf("ext:%s:%s", req.Provider, req.Slug)
-	if err := s.ensureCredentialManager(); err == nil {
-		if len(req.Credentials) > 0 {
-		// Store updated credentials in vault and reference them
-		credRef := server.External.CredentialRef
-		if credRef == "" {
-			credRef = fmt.Sprintf("ext:%s:%s", server.External.Provider, server.Slug)
-		}
+	if len(req.Credentials) > 0 {
 		if err := s.ensureCredentialManager(); err == nil {
+			credRef := fmt.Sprintf("ext:%s:%s", req.Provider, req.Slug)
 			_ = s.credentialManager.vault.Store(credRef, req.Credentials)
-			server.External.CredentialRef = credRef
+			externalInfo.CredentialRef = credRef
 		}
-		// Do not persist raw credentials in registry
-		server.External.Credentials = nil
-		server.External.APIKey = ""
-			_ = s.credentialManager.vault.Store(credentialRef, req.Credentials)
-			externalInfo.CredentialRef = credentialRef
-			// clear legacy inline credentials
-			externalInfo.Credentials = nil
-			externalInfo.APIKey = ""
-		}
+		// do not persist raw credentials in registry (legacy fields)
+		externalInfo.Credentials = nil
+		externalInfo.APIKey = ""
 	}
 
 	// Create the server entry
