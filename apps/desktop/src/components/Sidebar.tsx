@@ -1,4 +1,18 @@
-import { Circle, Download, FileText, LayoutDashboard, Menu, Server, Settings, Users, Globe, ChevronDown, ChevronRight, ShoppingBag, KeyRound } from "lucide-react";
+import {
+  Circle,
+  Download,
+  FileText,
+  LayoutDashboard,
+  Menu,
+  Server,
+  Settings,
+  Users,
+  Globe,
+  ChevronDown,
+  ChevronRight,
+  ShoppingBag,
+  KeyRound,
+} from "lucide-react";
 import React from "react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -24,22 +38,30 @@ type ServerItem = LocalServerItem | RemoteServerItem;
 
 function StatusDot({ status, type }: { status: string; type: "local" | "remote" }) {
   if (type === "local") {
-    const colorClass = status === "ready" ? "text-green-500" : status === "degraded" ? "text-orange-500" : "text-red-500";
+    const colorClass =
+      status === "ready" ? "text-green-500" : status === "degraded" ? "text-orange-500" : "text-red-500";
     return <Circle className={`h-2 w-2 ${colorClass} fill-current`} />;
   } else {
-    const colorClass = status === "active" ? "text-green-500" : status === "error" ? "text-red-500" : status === "connecting" ? "text-blue-500" : "text-gray-500";
+    const colorClass =
+      status === "active"
+        ? "text-green-500"
+        : status === "error"
+          ? "text-red-500"
+          : status === "connecting"
+            ? "text-blue-500"
+            : "text-gray-500";
     return <Circle className={`h-2 w-2 ${colorClass} fill-current`} />;
   }
 }
 
-export function Sidebar({ 
-  servers: localServers, 
-  collapsed, 
-  onToggleCollapse 
-}: { 
-  servers: Array<{slug: string; name: string; status: "ready" | "degraded" | "down"}>; 
-  collapsed: boolean; 
-  onToggleCollapse: () => void 
+export function Sidebar({
+  servers: localServers,
+  collapsed,
+  onToggleCollapse,
+}: {
+  servers: Array<{ slug: string; name: string; status: "ready" | "degraded" | "down" }>;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
   const [currentHash, setCurrentHash] = React.useState(window.location.hash || "#/dashboard");
   const [remoteServers, setRemoteServers] = React.useState<ExternalServerConfig[]>([]);
@@ -69,17 +91,17 @@ export function Sidebar({
     return () => clearInterval(interval);
   }, []);
 
-  const localServerItems: LocalServerItem[] = localServers.map(s => ({
+  const localServerItems: LocalServerItem[] = localServers.map((s) => ({
     ...s,
-    type: "local" as const
+    type: "local" as const,
   }));
 
-  const remoteServerItems: RemoteServerItem[] = remoteServers.map(s => ({
+  const remoteServerItems: RemoteServerItem[] = remoteServers.map((s) => ({
     slug: s.slug,
     name: s.name,
     status: s.status?.state || "inactive",
     type: "remote" as const,
-    provider: s.provider
+    provider: s.provider,
   }));
 
   const isActive = (path: string) => currentHash.startsWith(path);
@@ -97,28 +119,28 @@ export function Sidebar({
   }) => (
     <Button
       variant={isActive(href) ? "secondary" : "ghost"}
-      className={`w-full justify-start h-9 ${collapsed ? 'px-2' : 'px-3'} ${className}`}
+      className={`w-full justify-start h-9 ${collapsed ? "px-2" : "px-3"} ${className}`}
       asChild
       title={collapsed ? children?.toString() : undefined}
     >
       <a href={href}>
-        <Icon className={`h-4 w-4 ${collapsed ? '' : 'mr-2'} shrink-0`} />
+        <Icon className={`h-4 w-4 ${collapsed ? "" : "mr-2"} shrink-0`} />
         {!collapsed && <span className="truncate">{children}</span>}
       </a>
     </Button>
   );
 
-  const ServerGroup = ({ 
-    title, 
-    servers, 
-    expanded, 
-    onToggle, 
+  const ServerGroup = ({
+    title,
+    servers,
+    expanded,
+    onToggle,
     icon: Icon,
-    type 
-  }: { 
-    title: string; 
-    servers: ServerItem[]; 
-    expanded: boolean; 
+    type,
+  }: {
+    title: string;
+    servers: ServerItem[];
+    expanded: boolean;
     onToggle: () => void;
     icon: any;
     type: "local" | "remote";
@@ -153,13 +175,9 @@ export function Sidebar({
         >
           <Icon className="h-4 w-4 mr-2 shrink-0" />
           <span className="flex-1 text-left">{title}</span>
-          {expanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0" />
-          )}
+          {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
         </Button>
-        
+
         {expanded && (
           <div className="space-y-1 pl-6">
             {servers.map((s) => (
@@ -180,11 +198,7 @@ export function Sidebar({
                 </a>
               </Button>
             ))}
-            {servers.length === 0 && (
-              <div className="px-3 py-2 text-xs text-muted-foreground">
-                No {type} servers
-              </div>
-            )}
+            {servers.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">No {type} servers</div>}
           </div>
         )}
       </div>
@@ -192,17 +206,18 @@ export function Sidebar({
   };
 
   const totalServers = localServerItems.length + remoteServerItems.length;
-  const activeServers = localServerItems.filter(s => s.status === "ready").length + 
-                       remoteServerItems.filter(s => s.status === "active").length;
+  const activeServers =
+    localServerItems.filter((s) => s.status === "ready").length +
+    remoteServerItems.filter((s) => s.status === "active").length;
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-64'} border-r bg-muted/30 transition-all duration-200`}>
+    <aside className={`${collapsed ? "w-16" : "w-64"} border-r bg-muted/30 transition-all duration-200`}>
       <div className="p-4 border-b">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onToggleCollapse}
               className="h-8 w-8 p-0"
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -228,9 +243,9 @@ export function Sidebar({
         </NavButton>
         <NavButton href="#/market" icon={ShoppingBag}>
           Marketplace
+        </NavButton>
         <NavButton href="#/external" icon={Globe}>
           External
-        </NavButton>
         </NavButton>
 
         <Separator className="my-3" />

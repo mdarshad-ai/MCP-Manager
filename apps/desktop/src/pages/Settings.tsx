@@ -179,14 +179,20 @@ export function Settings() {
                 <Label className="text-base">Autostart Manager</Label>
                 <p className="text-sm text-muted-foreground">Start MCP Manager automatically at login</p>
               </div>
-              <Switch checked={settings?.autostart || false} onCheckedChange={(checked) => updateSetting("autostart", checked)} />
+              <Switch
+                checked={settings?.autostart || false}
+                onCheckedChange={(checked) => updateSetting("autostart", checked)}
+              />
             </div>
 
             <Separator />
 
             <div className="space-y-2">
               <Label>Theme</Label>
-              <Select value={theme} onValueChange={setTheme}>
+              <Select
+                value={settings?.theme?.mode || theme}
+                onValueChange={(value) => updateNestedSetting("theme", "mode", value)}
+              >
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Select theme" />
                 </SelectTrigger>
@@ -281,7 +287,9 @@ export function Settings() {
                     <Progress
                       value={Math.min(
                         100,
-                        settings?.storage ? (settings.storage.used / (settings.storage.used + settings.storage.available)) * 100 : 0,
+                        settings?.storage
+                          ? (settings.storage.used / (settings.storage.used + settings.storage.available)) * 100
+                          : 0,
                       )}
                       className="w-full"
                     />

@@ -10,7 +10,7 @@ import { Logs } from "./pages/Logs";
 import { ServerDetails } from "./pages/ServerDetails";
 import { Settings } from "./pages/Settings";
 import { ExternalServers } from "./pages/ExternalServers";
-import { Credentials } from "./pages/Credentials";
+import Credentials from "./pages/Credentials";
 
 export default function App() {
   const [route, setRoute] = React.useState(window.location.hash || "#/dashboard");
@@ -59,10 +59,10 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar 
-        servers={servers} 
-        collapsed={sidebarCollapsed} 
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} 
+      <Sidebar
+        servers={servers}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       <main className="flex-1">
         <ErrorBoundary>

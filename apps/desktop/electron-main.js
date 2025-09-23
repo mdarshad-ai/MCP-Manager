@@ -38,10 +38,16 @@ function startDaemon() {
     }
     return;
   }
+
+  // Don't start daemon in development mode since it's already running
+  if (isDev) {
+    console.log("In development mode - daemon already running separately");
+    return;
+  }
   console.log("Starting daemon from:", bin);
   daemon = spawn(bin, [], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: "38018" },
+    env: { ...process.env, PORT: "7099" },
   });
 
   daemon.stdout?.on("data", (data) => {
@@ -90,7 +96,7 @@ async function createWindow() {
   // Load the app
   if (isDev) {
     // In dev, load from Vite dev server
-    await mainWindow.loadURL("http://localhost:5173");
+    await mainWindow.loadURL("http://localhost:8099");
     mainWindow.webContents.openDevTools();
   } else {
     // In production, load from built files

@@ -1,7 +1,11 @@
 {
   "name": "mcp-manager",
   "private": true,
-  "workspaces": ["apps/*", "services/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "node scripts/dev-unified.mjs",
     "dev:legacy": "node scripts/dev.mjs",
@@ -31,5 +35,8 @@
     "clean": "rm -rf build dist services/manager/bin apps/desktop/dist",
     "make": "make",
     "make:help": "make help"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.8.0"
   }
 }

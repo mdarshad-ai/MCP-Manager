@@ -27,7 +27,7 @@ func NewKeychainVault(serviceName string) (*KeychainVault, error) {
 	if home == "" {
 		return nil, errors.New("HOME environment variable not set")
 	}
-	
+
 	storagePath := filepath.Join(home, ".mcp", "secrets")
 	if err := os.MkdirAll(storagePath, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create secrets directory: %w", err)
@@ -51,7 +51,7 @@ func (k *KeychainVault) Store(provider string, credentials map[string]string) er
 	// In a production implementation, this would use the OS keychain
 	// For development/testing, we store in a secured file
 	filePath := filepath.Join(k.storagePath, fmt.Sprintf("%s.json", provider))
-	
+
 	// Convert credentials to JSON
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
@@ -73,7 +73,7 @@ func (k *KeychainVault) Retrieve(provider string) (map[string]string, error) {
 	}
 
 	filePath := filepath.Join(k.storagePath, fmt.Sprintf("%s.json", provider))
-	
+
 	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("credentials not found for provider: %s", provider)
@@ -93,7 +93,7 @@ func (k *KeychainVault) Retrieve(provider string) (map[string]string, error) {
 	return credentials, nil
 }
 
-// Update updates stored credentials for a provider
+// Update updates stored credentials for a provider, preserving existing keys not in the update
 func (k *KeychainVault) Update(provider string, credentials map[string]string) error {
 	if provider == "" {
 		return errors.New("provider name cannot be empty")
@@ -105,8 +105,19 @@ func (k *KeychainVault) Update(provider string, credentials map[string]string) e
 		return fmt.Errorf("credentials not found for provider: %s", provider)
 	}
 
-	// Update is the same as store for file-based implementation
-	return k.Store(provider, credentials)
+	// Retrieve existing credentials
+	existing, err := k.Retrieve(provider)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve existing credentials: %w", err)
+	}
+
+	// Merge with new credentials
+	for key, value := range credentials {
+		existing[key] = value
+	}
+
+	// Store merged credentials
+	return k.Store(provider, existing)
 }
 
 // Delete removes stored credentials for a provider
@@ -116,7 +127,7 @@ func (k *KeychainVault) Delete(provider string) error {
 	}
 
 	filePath := filepath.Join(k.storagePath, fmt.Sprintf("%s.json", provider))
-	
+
 	// Remove the file
 	if err := os.Remove(filePath); err != nil {
 		if os.IsNotExist(err) {
@@ -146,8 +157,8 @@ func (k *KeychainVault) List() ([]string, error) {
 	return providers, nil
 }
 
-// Exists checks if credentials exist for a provider
-func (k *KeychainVault) Exists(provider string) bool {
+// HasCredentials checks if credentials exist for a provider
+func (k *KeychainVault) HasCredentials(provider string) bool {
 	if provider == "" {
 		return false
 	}
