@@ -4,7 +4,7 @@ export type ServerRow = {
   status: "ready" | "degraded" | "down";
 };
 
-const BASE = "http://127.0.0.1:38018";
+const BASE = "http://127.0.0.1:7099";
 
 export async function fetchServers(): Promise<ServerRow[]> {
   const r = await fetch(`${BASE}/v1/servers`);
@@ -132,10 +132,10 @@ export async function setAutostart(enabled: boolean): Promise<{ enabled: boolean
   const r = await fetch(`${BASE}/v1/settings/autostart`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
+    body: JSON.stringify({
       enabled,
       platform: "darwin", // macOS
-      method: "launchagent" // Use LaunchAgent for macOS
+      method: "launchagent", // Use LaunchAgent for macOS
     }),
   });
   if (!r.ok) throw new Error("autostart set failed");
@@ -150,7 +150,7 @@ export async function setupMacOSAutostart(appPath: string, enabled: boolean): Pr
     body: JSON.stringify({
       enabled,
       appPath,
-      launchAgentPath: `${process.env.HOME}/Library/LaunchAgents/com.mcp-manager.plist`
+      launchAgentPath: `${process.env.HOME}/Library/LaunchAgents/com.mcp-manager.plist`,
     }),
   });
   if (!r.ok) throw new Error("macOS autostart setup failed");
@@ -454,7 +454,9 @@ export async function fetchExternalServers(): Promise<ExternalServerConfig[]> {
   return r.json();
 }
 
-export async function createExternalServer(server: Omit<ExternalServerConfig, "id" | "status" | "createdAt" | "updatedAt">): Promise<ExternalServerConfig> {
+export async function createExternalServer(
+  server: Omit<ExternalServerConfig, "id" | "status" | "createdAt" | "updatedAt">,
+): Promise<ExternalServerConfig> {
   const r = await fetch(`${BASE}/v1/external/servers`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -464,7 +466,10 @@ export async function createExternalServer(server: Omit<ExternalServerConfig, "i
   return r.json();
 }
 
-export async function updateExternalServer(id: string, server: Partial<ExternalServerConfig>): Promise<ExternalServerConfig> {
+export async function updateExternalServer(
+  id: string,
+  server: Partial<ExternalServerConfig>,
+): Promise<ExternalServerConfig> {
   const r = await fetch(`${BASE}/v1/external/servers/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

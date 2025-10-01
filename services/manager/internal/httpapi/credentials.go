@@ -75,7 +75,7 @@ func (rl *rateLimiter) recordAttempt(provider string) {
 
 	now := time.Now()
 	attempts := rl.attempts[provider]
-	
+
 	// Clean old attempts
 	cutoff := now.Add(-1 * time.Minute)
 	var validAttempts []time.Time
@@ -84,7 +84,7 @@ func (rl *rateLimiter) recordAttempt(provider string) {
 			validAttempts = append(validAttempts, attempt)
 		}
 	}
-	
+
 	// Add new attempt
 	validAttempts = append(validAttempts, now)
 	rl.attempts[provider] = validAttempts
@@ -103,10 +103,10 @@ type StoreCredentialsResponse struct {
 }
 
 type GetCredentialRequirementsResponse struct {
-	Provider     string                  `json:"provider"`
-	Credentials  []providers.Credential  `json:"credentials"`
-	AuthType     providers.AuthType      `json:"authType"`
-	Description  string                  `json:"description"`
+	Provider    string                 `json:"provider"`
+	Credentials []providers.Credential `json:"credentials"`
+	AuthType    providers.AuthType     `json:"authType"`
+	Description string                 `json:"description"`
 }
 
 type UpdateCredentialsRequest struct {
@@ -129,15 +129,15 @@ type ValidateCredentialsRequest struct {
 }
 
 type ValidateCredentialsResponse struct {
-    Valid       bool   `json:"valid"`
-    Status      string `json:"status"`
-    Message     string `json:"message"`
-    HealthCheck *health.ExternalHealth `json:"healthCheck,omitempty"`
+	Valid       bool                   `json:"valid"`
+	Status      string                 `json:"status"`
+	Message     string                 `json:"message"`
+	HealthCheck *health.ExternalHealth `json:"healthCheck,omitempty"`
 }
 
 type CredentialStatusResponse struct {
-    Provider string `json:"provider"`
-    Exists   bool   `json:"exists"`
+	Provider string `json:"provider"`
+	Exists   bool   `json:"exists"`
 }
 
 // HTTP Handlers
@@ -561,7 +561,7 @@ func (s *Server) handleCredentialsValidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	log.Printf("[AUDIT] Credential validation performed for provider: %s, result: %s", req.Provider, status)
-	
+
 	writeJSON(w, ValidateCredentialsResponse{
 		Valid:       valid,
 		Status:      status,
@@ -572,73 +572,92 @@ func (s *Server) handleCredentialsValidate(w http.ResponseWriter, r *http.Reques
 
 // handleCredentialsStatus handles GET /v1/credentials/status[?provider=x]
 func (s *Server) handleCredentialsStatus(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
-    // Ensure manager
-    if s.credentialManager == nil {
-        cm, err := NewCredentialManager()
-        if err != nil { w.WriteHeader(http.StatusInternalServerError); return }
-        s.credentialManager = cm
-    }
+	// Ensure manager
+	if s.credentialManager == nil {
+		cm, err := NewCredentialManager()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		s.credentialManager = cm
+	}
 
-    q := r.URL.Query().Get("provider")
-    if q != "" {
-        exists := s.credentialManager.vault.Exists(q)
-        writeJSON(w, CredentialStatusResponse{ Provider: q, Exists: exists })
-        return
-    }
+	q := r.URL.Query().Get("provider")
+	if q != "" {
+		exists := s.credentialManager.vault.HasCredentials(q)
+		writeJSON(w, CredentialStatusResponse{Provider: q, Exists: exists})
+		return
+	}
 
-    // List for all known providers
-    list := providers.GetAllProviders()
-    out := make([]CredentialStatusResponse, 0, len(list))
-    for _, p := range list {
-        out = append(out, CredentialStatusResponse{ Provider: p.Name, Exists: s.credentialManager.vault.Exists(p.Name) })
-    }
-    writeJSON(w, out)
+	// List for all known providers
+	list := providers.GetAllProviders()
+	out := make([]CredentialStatusResponse, 0, len(list))
+	for _, p := range list {
+		out = append(out, CredentialStatusResponse{Provider: p.Name, Exists: s.credentialManager.vault.HasCredentials(p.Name)})
+	}
+	writeJSON(w, out)
 }
 
 // handleCredentialsValidateStored handles POST /v1/credentials/validate-stored
 // Body: { "provider": "name" }
 func (s *Server) handleCredentialsValidateStored(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost { w.WriteHeader(http.StatusMethodNotAllowed); return }
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
-    var body struct{ Provider string `json:"provider"` }
-    if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Provider == "" {
-        w.WriteHeader(http.StatusBadRequest)
-        writeJSON(w, map[string]string{"error":"provider required"})
-        return
-    }
+	var body struct {
+		Provider string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Provider == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]string{"error": "provider required"})
+		return
+	}
 
-    if s.credentialManager == nil {
-        cm, err := NewCredentialManager(); if err != nil { w.WriteHeader(http.StatusInternalServerError); return }
-        s.credentialManager = cm
-    }
+	if s.credentialManager == nil {
+		cm, err := NewCredentialManager()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		s.credentialManager = cm
+	}
 
-    creds, err := s.credentialManager.vault.Retrieve(body.Provider)
-    if err != nil {
-        w.WriteHeader(http.StatusNotFound)
-        writeJSON(w, map[string]string{"error":"stored credentials not found"})
-        return
-    }
+	creds, err := s.credentialManager.vault.Retrieve(body.Provider)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		writeJSON(w, map[string]string{"error": "stored credentials not found"})
+		return
+	}
 
-    ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
 
-    hc, err := s.credentialManager.healthChecker.CheckProviderHealth(ctx, body.Provider, creds)
-    if err != nil {
-        writeJSON(w, ValidateCredentialsResponse{ Valid: false, Status: "health_check_failed", Message: "Failed during provider health check", HealthCheck: hc })
-        return
-    }
+	hc, err := s.credentialManager.healthChecker.CheckProviderHealth(ctx, body.Provider, creds)
+	if err != nil {
+		writeJSON(w, ValidateCredentialsResponse{Valid: false, Status: "health_check_failed", Message: "Failed during provider health check", HealthCheck: hc})
+		return
+	}
 
-    valid := hc.Status == "healthy"
-    status := "valid"; msg := "Credentials are valid and working"
-    if !valid {
-        if hc.StatusCode == 401 || hc.StatusCode == 403 { status = "invalid_credentials"; msg = "Stored credentials appear invalid" } else { status = "service_unavailable"; msg = "Service unavailable or insufficient scopes" }
-    }
-    writeJSON(w, ValidateCredentialsResponse{ Valid: valid, Status: status, Message: msg, HealthCheck: hc })
+	valid := hc.Status == "healthy"
+	status := "valid"
+	msg := "Credentials are valid and working"
+	if !valid {
+		if hc.StatusCode == 401 || hc.StatusCode == 403 {
+			status = "invalid_credentials"
+			msg = "Stored credentials appear invalid"
+		} else {
+			status = "service_unavailable"
+			msg = "Service unavailable or insufficient scopes"
+		}
+	}
+	writeJSON(w, ValidateCredentialsResponse{Valid: valid, Status: status, Message: msg, HealthCheck: hc})
 }
 
 // Add credential manager to Server struct (this would go in server.go)

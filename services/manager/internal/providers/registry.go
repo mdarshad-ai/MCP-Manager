@@ -11,9 +11,9 @@ import (
 type AuthType string
 
 const (
-	AuthAPIKey  AuthType = "api_key"
-	AuthOAuth2  AuthType = "oauth2"
-	AuthBasic   AuthType = "basic"
+	AuthAPIKey AuthType = "api_key"
+	AuthOAuth2 AuthType = "oauth2"
+	AuthBasic  AuthType = "basic"
 )
 
 // Credential represents a required credential with validation
@@ -21,8 +21,8 @@ type Credential struct {
 	Key         string `json:"key"`
 	DisplayName string `json:"displayName"`
 	Required    bool   `json:"required"`
-	Secret      bool   `json:"secret"`      // Should be stored securely
-	Validation  string `json:"validation"`  // Regex pattern for validation
+	Secret      bool   `json:"secret"`     // Should be stored securely
+	Validation  string `json:"validation"` // Regex pattern for validation
 	Description string `json:"description"`
 	Example     string `json:"example,omitempty"`
 }
@@ -295,11 +295,11 @@ func ValidateProviderConfig(providerName string, credentials map[string]string) 
 	// Check required credentials
 	for _, cred := range provider.Credentials {
 		value, exists := credentials[cred.Key]
-		
+
 		if cred.Required && (!exists || value == "") {
 			return ValidationError{
 				Field:   cred.Key,
-				Message: fmt.Sprintf("required credential '%s' is missing", cred.DisplayName),
+				Message: fmt.Sprintf("required credential '%s' is missing. Please provide a valid %s.", cred.DisplayName, cred.DisplayName),
 			}
 		}
 
@@ -320,7 +320,7 @@ func ValidateProviderConfig(providerName string, credentials map[string]string) 
 			if !matched {
 				return ValidationError{
 					Field:   cred.Key,
-					Message: fmt.Sprintf("credential '%s' does not match required format", cred.DisplayName),
+					Message: fmt.Sprintf("credential '%s' does not match required format. Example: %s", cred.DisplayName, cred.Example),
 				}
 			}
 		}
@@ -352,7 +352,7 @@ func GetCredentialRequirements(providerName string) ([]Credential, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Return a copy to prevent external modification
 	credentials := make([]Credential, len(provider.Credentials))
 	copy(credentials, provider.Credentials)
@@ -384,12 +384,12 @@ func AddProvider(provider Provider) error {
 	if provider.Name == "" {
 		return errors.New("provider name cannot be empty")
 	}
-	
+
 	name := strings.ToLower(provider.Name)
 	if _, exists := providerRegistry[name]; exists {
 		return fmt.Errorf("provider '%s' already exists", name)
 	}
-	
+
 	// Basic validation
 	if provider.DisplayName == "" {
 		return errors.New("provider display name cannot be empty")
@@ -400,7 +400,7 @@ func AddProvider(provider Provider) error {
 	if len(provider.Credentials) == 0 {
 		return errors.New("provider must have at least one credential")
 	}
-	
+
 	// Validate credentials
 	for i, cred := range provider.Credentials {
 		if cred.Key == "" {
@@ -415,7 +415,7 @@ func AddProvider(provider Provider) error {
 			}
 		}
 	}
-	
+
 	providerRegistry[name] = provider
 	return nil
 }

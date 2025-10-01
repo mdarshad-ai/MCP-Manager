@@ -38,10 +38,16 @@ function startDaemon() {
     }
     return;
   }
+
+  // Don't start daemon in development mode since it's already running
+  if (isDev) {
+    console.log("In development mode - daemon already running separately");
+    return;
+  }
   console.log("Starting daemon from:", bin);
   daemon = spawn(bin, [], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: "38018" },
+    env: { ...process.env, PORT: "7099" },
   });
 
   daemon.stdout?.on("data", (data) => {
@@ -77,7 +83,7 @@ async function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
     },
     title: "MCP Manager",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
@@ -95,7 +101,15 @@ async function createWindow() {
   } else {
     // In production, load from built files
     const indexPath = path.join(__dirname, "dist", "index.html");
-    await mainWindow.loadFile(indexPath);
+    console.log("Loading index from:", indexPath);
+    console.log("__dirname:", __dirname);
+    try {
+      await mainWindow.loadFile(indexPath);
+    } catch (err) {
+      console.error("Failed to load index.html:", err);
+      // Show error window
+      mainWindow.loadURL(`data:text/html,<h1>Failed to load app</h1><pre>${err.message}</pre><p>Path: ${indexPath}</p>`);
+    }
   }
 
   // Show window when ready
