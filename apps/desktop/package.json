@@ -1,8 +1,11 @@
 {
   "name": "mcp-desktop",
+  "version": "0.1.0",
+  "description": "MCP Manager - Desktop application for managing local MCP servers",
+  "author": "MCP Manager Team",
   "private": true,
   "type": "module",
-  "main": "electron-main.js",
+  "main": "electron-main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -54,7 +57,7 @@
     "@types/react-dom": "^18.2.24",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
-    "electron": "^27.3.11",
+    "electron": "27.3.11",
     "electron-builder": "^24.13.3",
     "postcss": "^8.4.41",
     "tailwindcss": "^3.4.9",
@@ -62,5 +65,28 @@
     "typescript": "^5.5.4",
     "vite": "^7.1.4",
     "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "com.mcpmanager.desktop",
+    "productName": "MCP Manager",
+    "files": [
+      "electron-main.cjs",
+      "preload.cjs",
+      "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../../services/manager/bin/mcp-manager",
+        "to": "bin/mcp-manager"
+      }
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist-electron"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    }
   }
 }

@@ -3,6 +3,7 @@ import path from "path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  base: "./",
   server: {
     host: "0.0.0.0",
     port: 5173,
@@ -10,6 +11,7 @@ export default defineConfig({
     hmr: {
       clientPort: 5173,
     },
+    allowedHosts: ["host.docker.internal"],
   },
   plugins: [react()],
   resolve: {

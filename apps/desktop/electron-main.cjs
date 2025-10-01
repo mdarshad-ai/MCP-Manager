@@ -83,7 +83,7 @@ async function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
     },
     title: "MCP Manager",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
@@ -96,12 +96,20 @@ async function createWindow() {
   // Load the app
   if (isDev) {
     // In dev, load from Vite dev server
-    await mainWindow.loadURL("http://localhost:8099");
+    await mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
   } else {
     // In production, load from built files
     const indexPath = path.join(__dirname, "dist", "index.html");
-    await mainWindow.loadFile(indexPath);
+    console.log("Loading index from:", indexPath);
+    console.log("__dirname:", __dirname);
+    try {
+      await mainWindow.loadFile(indexPath);
+    } catch (err) {
+      console.error("Failed to load index.html:", err);
+      // Show error window
+      mainWindow.loadURL(`data:text/html,<h1>Failed to load app</h1><pre>${err.message}</pre><p>Path: ${indexPath}</p>`);
+    }
   }
 
   // Show window when ready
