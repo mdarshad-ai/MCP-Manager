@@ -25,12 +25,19 @@ import { Progress } from '../components/ui/progress'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
+type LogEntry = string | {
+  timestamp: string
+  level: string
+  stage: string
+  message: string
+}
+
 type InstallProgress = {
   id: string
   stage: 'validating' | 'downloading' | 'installing' | 'configuring' | 'finalizing'
   progress: number
   message: string
-  logs: string[]
+  logs: LogEntry[]
   done: boolean
   success?: boolean
   error?: string
@@ -467,9 +474,13 @@ export function Install() {
             <ScrollArea className="h-80 w-full border rounded-lg">
               <div className="p-3 text-xs bg-black text-green-400 font-mono min-h-full">
                 {currentJob?.logs.length ? (
-                  currentJob.logs.map((line, i) => (
-                    <div key={i} className="mb-1 break-all">{line}</div>
-                  ))
+                  currentJob.logs.map((line, i) => {
+                    // Handle both string logs (old format) and object logs (new format)
+                    const logText = typeof line === 'string' ? line : line.message || JSON.stringify(line);
+                    return (
+                      <div key={i} className="mb-1 break-all">{logText}</div>
+                    );
+                  })
                 ) : validation ? (
                   <pre className="text-gray-300 whitespace-pre-wrap">{JSON.stringify(validation, null, 2)}</pre>
                 ) : (
