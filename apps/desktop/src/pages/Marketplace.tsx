@@ -9,7 +9,15 @@ import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { useToast } from "../hooks/use-toast";
-import { installStart, installLogs, finalizeInstallation, createExternalServer } from "../api";
+import { 
+  installStart, 
+  installLogs, 
+  finalizeInstallation, 
+  installStartAdvanced,
+  installLogsAdvanced,
+  finalizeInstallationAdvanced,
+  createExternalServer 
+} from "../api";
 
 export function Marketplace() {
   const [query, setQuery] = React.useState("");
@@ -43,16 +51,21 @@ export function Marketplace() {
       setBusyId(item.slug);
       setProgress((p) => ({ ...p, [item.slug]: "Starting..." }));
 
-      const res = await installStart({ type: item.install.type, uri: item.install.uri, slug: item.slug });
+      // Use the new advanced installation API
+      const res = await installStartAdvanced({ 
+        type: item.install.type, 
+        uri: item.install.uri, 
+        slug: item.slug 
+      });
 
       let done = false;
       while (!done) {
-        const s = await installLogs(res.id);
-        setProgress((p) => ({ ...p, [item.slug]: s.logs.slice(-1)[0] || s.message || "" }));
-        done = s.done;
+        const s = await installLogsAdvanced(res.jobId);
+        setProgress((p) => ({ ...p, [item.slug]: s.message || "Installing..." }));
+        done = s.status === "completed" || s.status === "failed";
         if (!done) await new Promise((r) => setTimeout(r, 1200));
-        if (done && s.ok) {
-          try { await finalizeInstallation(res.id); } catch {}
+        if (done && s.status === "completed") {
+          try { await finalizeInstallationAdvanced(res.jobId); } catch {}
         }
       }
 

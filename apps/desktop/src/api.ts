@@ -549,3 +549,53 @@ export async function credsValidate(provider: string, credentials: Record<string
   if (!r.ok) throw new Error(`credentials validate ${r.status}`);
   return r.json();
 }
+
+// Advanced Installation API (New System)
+export type AdvancedInstallRequest = {
+  type: "git" | "npm" | "pip" | "docker-image" | "docker-compose";
+  uri: string;
+  slug: string;
+  options?: Record<string, any>;
+};
+
+export type AdvancedInstallResponse = {
+  jobId: string;
+  status: string;
+  message?: string;
+};
+
+export type AdvancedInstallStatus = {
+  jobId: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  stage: string;
+  progress: number;
+  message: string;
+  logs: string[];
+  result?: {
+    success: boolean;
+    message?: string;
+  };
+};
+
+export async function installStartAdvanced(request: AdvancedInstallRequest): Promise<AdvancedInstallResponse> {
+  const r = await fetch(`${BASE}/v1/install/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!r.ok) throw new Error(`advanced install start failed: ${r.status}`);
+  return r.json();
+}
+
+export async function installLogsAdvanced(jobId: string): Promise<AdvancedInstallStatus> {
+  const r = await fetch(`${BASE}/v1/install/logs?id=${encodeURIComponent(jobId)}`);
+  if (!r.ok) throw new Error(`advanced install logs failed: ${r.status}`);
+  return r.json();
+}
+
+export async function finalizeInstallationAdvanced(jobId: string): Promise<void> {
+  const r = await fetch(`${BASE}/v1/install/finalize?id=${encodeURIComponent(jobId)}`, {
+    method: "POST",
+  });
+  if (!r.ok) throw new Error(`advanced install finalize failed: ${r.status}`);
+}

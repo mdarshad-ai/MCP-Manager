@@ -1,6 +1,20 @@
 import { AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import React from 'react'
-import { fetchInstallHistory, finalizeInstallation, type InstallInput, type InstallValidation, installCancel, installLogs, installStart, installValidate } from '../api'
+import { 
+  fetchInstallHistory, 
+  finalizeInstallation, 
+  type InstallInput, 
+  type InstallValidation, 
+  installCancel, 
+  installLogs, 
+  installStart, 
+  installValidate,
+  installStartAdvanced,
+  installLogsAdvanced,
+  finalizeInstallationAdvanced,
+  type AdvancedInstallRequest,
+  type AdvancedInstallStatus
+} from '../api'
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -89,34 +103,48 @@ export function Install() {
     })
     
     try {
-      const result = await installStart({ type: source, uri, slug, runtime, manager: pkgMgr })
-      const jobId = result?.id || `job-${Date.now()}`
+      // Use the new advanced installation system
+      const result = await installStartAdvanced({ 
+        type: source, 
+        uri, 
+        slug,
+        options: {
+          runtime: runtime !== 'auto' ? runtime : undefined,
+          manager: pkgMgr !== 'auto' ? pkgMgr : undefined
+        }
+      })
+      const jobId = result?.jobId || `job-${Date.now()}`
       setCurrentJob(prev => prev ? { ...prev, id: jobId } : null)
       
       const poll = async () => {
         try {
-          const res = await installLogs(jobId)
+          const res = await installLogsAdvanced(jobId)
           setCurrentJob(prev => prev ? {
             ...prev,
             logs: res.logs,
-            done: res.done,
-            success: res.ok,
-            error: res.message,
-            progress: res.done ? 100 : Math.min(95, (prev.progress || 0) + 5),
-            message: res.message || prev.message
+            done: res.status === 'completed' || res.status === 'failed',
+            success: res.status === 'completed',
+            error: res.status === 'failed' ? res.message : undefined,
+            progress: res.progress,
+            message: res.message,
+            stage: res.stage
           } : null)
           
-          if (res.done) {
+          if (res.status === 'completed' || res.status === 'failed') {
             setBusy(false)
-            if (res.ok) {
+            if (res.status === 'completed') {
               try {
-                await finalizeInstallation(jobId)
+                await finalizeInstallationAdvanced(jobId)
               } catch (finalizeError) {
                 console.warn('Finalization failed, but installation succeeded:', finalizeError)
               }
               await loadHistory() // Refresh history
             }
-            setValidation({ ok: res.ok, problems: res.ok ? [] : [res.message || 'Installation failed'], slug })
+            setValidation({ 
+              ok: res.status === 'completed', 
+              problems: res.status === 'failed' ? [res.message || 'Installation failed'] : [], 
+              slug 
+            })
             return
           }
           setTimeout(poll, 1000)
