@@ -451,7 +451,8 @@ export type ExternalServerConfig = {
 export async function fetchExternalServers(): Promise<ExternalServerConfig[]> {
   const r = await fetch(`${BASE}/v1/external/servers`);
   if (!r.ok) throw new Error(`external servers fetch ${r.status}`);
-  return r.json();
+  const data = await r.json();
+  return data || [];
 }
 
 export async function createExternalServer(
@@ -502,7 +503,8 @@ export async function testExternalConnection(slug: string): Promise<{
 export async function getProviderTemplates(): Promise<ExternalServerProvider[]> {
   const r = await fetch(`${BASE}/v1/external/providers`);
   if (!r.ok) throw new Error(`provider templates fetch ${r.status}`);
-  return r.json();
+  const data = await r.json();
+  return data || [];
 }
 
 // Credentials API helpers

@@ -30,19 +30,25 @@ export default function App() {
     const loadServers = async () => {
       try {
         const data = await fetchServers();
-        const mappedServers = data.map((s: any) => ({
-          slug: s.slug,
-          name: s.name,
-          status:
-            s.state === "running"
-              ? ("ready" as const)
-              : s.state === "starting"
-                ? ("starting" as const)
-                : ("down" as const),
-        }));
-        setServers(mappedServers);
+        if (data && Array.isArray(data)) {
+          const mappedServers = data.map((s: any) => ({
+            slug: s.slug,
+            name: s.name,
+            status:
+              s.state === "running"
+                ? ("ready" as const)
+                : s.state === "starting"
+                  ? ("starting" as const)
+                  : ("down" as const),
+          }));
+          setServers(mappedServers);
+        } else {
+          console.warn("No server data received or invalid format:", data);
+          setServers([]);
+        }
       } catch (error) {
         console.error("Failed to fetch servers:", error);
+        setServers([]);
       }
     };
 
