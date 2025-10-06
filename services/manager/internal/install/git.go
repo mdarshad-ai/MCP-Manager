@@ -97,6 +97,7 @@ func (g *GitInstaller) Install(ctx context.Context, slug string, options GitInst
 	// Validate git repository accessibility
 	if err := g.validateRepository(ctx, options); err != nil {
 		result.Error = fmt.Sprintf("Repository validation failed: %v", err)
+		result.Success = false
 		logf(g.logger, result.Error)
 		return result, nil
 	}
@@ -104,6 +105,7 @@ func (g *GitInstaller) Install(ctx context.Context, slug string, options GitInst
 	// Clone repository
 	if err := g.cloneRepository(ctx, options, installDir); err != nil {
 		result.Error = fmt.Sprintf("Repository clone failed: %v", err)
+		result.Success = false
 		logf(g.logger, result.Error)
 		return result, nil
 	}
@@ -122,6 +124,7 @@ func (g *GitInstaller) Install(ctx context.Context, slug string, options GitInst
 		// Install dependencies based on detected runtime
 		if err := g.installDependencies(ctx, installDir, runtimeDir, runtime, manager, options); err != nil {
 			result.Error = fmt.Sprintf("Dependency installation failed: %v", err)
+			result.Success = false
 			logf(g.logger, result.Error)
 			return result, nil
 		}
@@ -131,6 +134,7 @@ func (g *GitInstaller) Install(ctx context.Context, slug string, options GitInst
 	if len(options.PostInstall) > 0 {
 		if err := g.runPostInstallCommands(ctx, installDir, options); err != nil {
 			result.Error = fmt.Sprintf("Post-install commands failed: %v", err)
+			result.Success = false
 			logf(g.logger, result.Error)
 			return result, nil
 		}
@@ -151,6 +155,7 @@ func (g *GitInstaller) Install(ctx context.Context, slug string, options GitInst
 	// Create executable script in bin directory
 	if err := g.createBinScript(binDir, slug, result.EntryCommand, result.EntryArgs, result.Environment); err != nil {
 		result.Error = fmt.Sprintf("Failed to create bin script: %v", err)
+		result.Success = false
 		logf(g.logger, result.Error)
 		return result, nil
 	}

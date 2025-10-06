@@ -35,6 +35,10 @@ type InstallProgress = {
   done: boolean
   success?: boolean
   error?: string
+  result?: {
+    success: boolean
+    error?: string
+  }
 }
 
 type InstallHistory = {
@@ -236,16 +240,19 @@ export function Install() {
             ...prev,
             logs: res.logs,
             done: res.status === 'completed' || res.status === 'failed',
-            success: res.status === 'completed',
-            error: res.status === 'failed' ? res.message : undefined,
+            success: res.result?.success === true,
+            error: res.result?.success === false ? (res.result?.error || res.message) : undefined,
             progress: res.progress,
             message: res.message,
-            stage: res.stage
+            stage: res.stage,
+            result: res.result
           } : null)
           
           if (res.status === 'completed' || res.status === 'failed') {
             setBusy(false)
-            if (res.status === 'completed') {
+            // Check if installation actually succeeded by looking at the result
+            const installationSucceeded = res.result?.success === true
+            if (res.status === 'completed' && installationSucceeded) {
               try {
                 await finalizeInstallationAdvanced(jobId)
               } catch (finalizeError) {
@@ -254,9 +261,9 @@ export function Install() {
               await loadHistory() // Refresh history
             }
             setValidation({ 
-              ok: res.status === 'completed', 
-              problems: res.status === 'failed' ? [res.message || 'Installation failed'] : [], 
-              slug: finalSlug 
+              ok: installationSucceeded, 
+              problems: installationSucceeded ? [] : [res.result?.error || res.message || 'Installation failed'], 
+              slug: finalSlug
             })
             return
           }

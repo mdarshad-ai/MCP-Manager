@@ -37,6 +37,16 @@ func (cgi *ConcreteGitInstaller) Install(ctx context.Context, job *InstallationJ
 		return nil, fmt.Errorf("git installation failed: %w", err)
 	}
 	
+	// Check if the installation actually succeeded
+	if !result.Success {
+		job.UpdateStage(StageFailed, 100)
+		job.Logf(LogLevelError, StageFailed, "Installation failed: %s", result.Error)
+		return &InstallationResult{
+			Success: false,
+			Error:   result.Error,
+		}, nil
+	}
+	
 	job.UpdateStage(StageCompleted, 100)
 	
 	// Convert to InstallationResult

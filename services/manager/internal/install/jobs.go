@@ -94,6 +94,7 @@ type InstallationResult struct {
 	InstalledVersion string                `json:"installedVersion"`
 	ServerEntry     *registry.Server       `json:"serverEntry,omitempty"`
 	Metadata        map[string]interface{} `json:"metadata"`
+	Error           string                 `json:"error,omitempty"`
 }
 
 // Installer interface for different installation types
