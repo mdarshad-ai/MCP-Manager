@@ -401,9 +401,23 @@ func (g *GitInstaller) installPythonDependencies(ctx context.Context, installDir
 
 	// Create virtual environment
 	venvDir := filepath.Join(runtimeDir, "venv")
-	cmd := exec.CommandContext(ctx, "python3", "-m", "venv", venvDir)
-	if _, _, err := g.runCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to create virtual environment: %w", err)
+	
+	// Try different Python commands in order of preference
+	pythonCommands := []string{"python", "python3", "py"}
+	var cmd *exec.Cmd
+	var lastErr error
+	
+	for _, pythonCmd := range pythonCommands {
+		cmd = exec.CommandContext(ctx, pythonCmd, "-m", "venv", venvDir)
+		if _, _, err := g.runCommand(ctx, cmd); err == nil {
+			break // Success, use this command
+		} else {
+			lastErr = err
+		}
+	}
+	
+	if lastErr != nil {
+		return fmt.Errorf("failed to create virtual environment: %w", lastErr)
 	}
 
 	// Determine pip executable path
