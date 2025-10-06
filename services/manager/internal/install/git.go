@@ -50,17 +50,17 @@ type GitInstallOptions struct {
 
 // GitInstallResult contains the result of a git installation
 type GitInstallResult struct {
-	Success       bool              `json:"success"`
-	InstallPath   string            `json:"installPath"`
-	RuntimePath   string            `json:"runtimePath"`
-	BinPath       string            `json:"binPath"`
-	DetectedRuntime string          `json:"detectedRuntime"`
-	DetectedManager string          `json:"detectedManager"`
-	EntryCommand  string            `json:"entryCommand"`
-	EntryArgs     []string          `json:"entryArgs"`
-	Environment   map[string]string `json:"environment"`
-	Logs          []string          `json:"logs"`
-	Error         string            `json:"error,omitempty"`
+	Success         bool              `json:"success"`
+	InstallPath     string            `json:"installPath"`
+	RuntimePath     string            `json:"runtimePath"`
+	BinPath         string            `json:"binPath"`
+	DetectedRuntime string            `json:"detectedRuntime"`
+	DetectedManager string            `json:"detectedManager"`
+	EntryCommand    string            `json:"entryCommand"`
+	EntryArgs       []string          `json:"entryArgs"`
+	Environment     map[string]string `json:"environment"`
+	Logs            []string          `json:"logs"`
+	Error           string            `json:"error,omitempty"`
 }
 
 // Install performs a git-based installation of an MCP server
@@ -163,9 +163,9 @@ func (g *GitInstaller) Install(ctx context.Context, slug string, options GitInst
 // validateRepository checks if the git repository is accessible
 func (g *GitInstaller) validateRepository(ctx context.Context, options GitInstallOptions) error {
 	logf(g.logger, "Validating repository access...")
-	
+
 	args := []string{"ls-remote", "--heads"}
-	
+
 	// Add authentication if provided
 	uri := options.URI
 	if options.Token != "" {
@@ -173,9 +173,9 @@ func (g *GitInstaller) validateRepository(ctx context.Context, options GitInstal
 	} else if options.Username != "" && options.Password != "" {
 		uri = g.addBasicAuthToURI(uri, options.Username, options.Password)
 	}
-	
+
 	args = append(args, uri)
-	
+
 	// Set up environment for SSH key if provided
 	env := os.Environ()
 	if options.SSHKey != "" {
@@ -184,39 +184,39 @@ func (g *GitInstaller) validateRepository(ctx context.Context, options GitInstal
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("repository not accessible: %w", err)
 	}
-	
+
 	return nil
 }
 
 // cloneRepository clones the git repository to the install directory
 func (g *GitInstaller) cloneRepository(ctx context.Context, options GitInstallOptions, installDir string) error {
 	logf(g.logger, "Cloning repository...")
-	
+
 	args := []string{"clone"}
-	
+
 	// Add depth for shallow clone
 	depth := options.Depth
 	if depth == 0 {
 		depth = 1 // Default shallow clone
 	}
 	args = append(args, "--depth", fmt.Sprintf("%d", depth))
-	
+
 	// Add recursive flag for submodules
 	if options.Recursive {
 		args = append(args, "--recursive")
 	}
-	
+
 	// Add branch or tag specification
 	if options.Branch != "" {
 		args = append(args, "--branch", options.Branch)
 	} else if options.Tag != "" {
 		args = append(args, "--branch", options.Tag)
 	}
-	
+
 	// Prepare URI with authentication
 	uri := options.URI
 	if options.Token != "" {
@@ -224,22 +224,22 @@ func (g *GitInstaller) cloneRepository(ctx context.Context, options GitInstallOp
 	} else if options.Username != "" && options.Password != "" {
 		uri = g.addBasicAuthToURI(uri, options.Username, options.Password)
 	}
-	
+
 	args = append(args, uri, installDir)
-	
+
 	// Set up environment
 	env := os.Environ()
 	if options.SSHKey != "" {
 		env = append(env, fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no", options.SSHKey))
 	}
-	
+
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("git clone failed: %w", err)
 	}
-	
+
 	// If specific commit is requested, checkout that commit
 	if options.Commit != "" {
 		logf(g.logger, "Checking out specific commit: %s", options.Commit)
@@ -248,7 +248,7 @@ func (g *GitInstaller) cloneRepository(ctx context.Context, options GitInstallOp
 			return fmt.Errorf("git checkout failed: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -257,7 +257,7 @@ func (g *GitInstaller) detectRuntime(installDir string) (runtime, manager string
 	// Check for Node.js
 	if _, err := os.Stat(filepath.Join(installDir, "package.json")); err == nil {
 		packageManager := "npm" // default
-		
+
 		// Check for preferred package manager
 		if _, err := os.Stat(filepath.Join(installDir, "package-lock.json")); err == nil {
 			packageManager = "npm"
@@ -266,16 +266,16 @@ func (g *GitInstaller) detectRuntime(installDir string) (runtime, manager string
 		} else if _, err := os.Stat(filepath.Join(installDir, "pnpm-lock.yaml")); err == nil {
 			packageManager = "pnpm"
 		}
-		
+
 		return "node", packageManager, nil
 	}
-	
+
 	// Check for Python
 	pyFiles := []string{"requirements.txt", "setup.py", "pyproject.toml", "Pipfile"}
 	for _, file := range pyFiles {
 		if _, err := os.Stat(filepath.Join(installDir, file)); err == nil {
 			manager := "pip" // default
-			
+
 			// Check for specific Python package managers
 			if file == "Pipfile" {
 				manager = "pipenv"
@@ -287,26 +287,26 @@ func (g *GitInstaller) detectRuntime(installDir string) (runtime, manager string
 					}
 				}
 			}
-			
+
 			return "python", manager, nil
 		}
 	}
-	
+
 	// Check for Go
 	if _, err := os.Stat(filepath.Join(installDir, "go.mod")); err == nil {
 		return "go", "go", nil
 	}
-	
+
 	// Check for Rust
 	if _, err := os.Stat(filepath.Join(installDir, "Cargo.toml")); err == nil {
 		return "rust", "cargo", nil
 	}
-	
+
 	// Check for Docker
 	if _, err := os.Stat(filepath.Join(installDir, "Dockerfile")); err == nil {
 		return "docker", "docker", nil
 	}
-	
+
 	return "binary", "", nil
 }
 
@@ -330,57 +330,83 @@ func (g *GitInstaller) installDependencies(ctx context.Context, installDir, runt
 // installNodeDependencies installs Node.js dependencies
 func (g *GitInstaller) installNodeDependencies(ctx context.Context, installDir, runtimeDir, manager string, options GitInstallOptions) error {
 	logf(g.logger, "Installing Node.js dependencies with %s...", manager)
-	
+
 	var cmd *exec.Cmd
 	switch manager {
 	case "npm":
-		cmd = exec.CommandContext(ctx, "npm", "install", "--prefix", runtimeDir)
-		cmd.Dir = installDir
+		// Copy package.json and package-lock.json to runtime dir for npm
+		if err := g.copyFile(filepath.Join(installDir, "package.json"), filepath.Join(runtimeDir, "package.json")); err != nil {
+			return fmt.Errorf("failed to copy package.json: %w", err)
+		}
+		// Copy package-lock.json if it exists
+		if _, err := os.Stat(filepath.Join(installDir, "package-lock.json")); err == nil {
+			if err := g.copyFile(filepath.Join(installDir, "package-lock.json"), filepath.Join(runtimeDir, "package-lock.json")); err != nil {
+				logf(g.logger, "Warning: Failed to copy package-lock.json: %v", err)
+			}
+		}
+		cmd = exec.CommandContext(ctx, "npm", "install")
+		cmd.Dir = runtimeDir
 	case "yarn":
 		// Copy package.json to runtime dir for yarn
 		if err := g.copyFile(filepath.Join(installDir, "package.json"), filepath.Join(runtimeDir, "package.json")); err != nil {
 			return fmt.Errorf("failed to copy package.json: %w", err)
 		}
+		// Copy yarn.lock if it exists
+		if _, err := os.Stat(filepath.Join(installDir, "yarn.lock")); err == nil {
+			if err := g.copyFile(filepath.Join(installDir, "yarn.lock"), filepath.Join(runtimeDir, "yarn.lock")); err != nil {
+				logf(g.logger, "Warning: Failed to copy yarn.lock: %v", err)
+			}
+		}
 		cmd = exec.CommandContext(ctx, "yarn", "install")
 		cmd.Dir = runtimeDir
 	case "pnpm":
-		cmd = exec.CommandContext(ctx, "pnpm", "install", "--prefix", runtimeDir)
-		cmd.Dir = installDir
+		// Copy package.json to runtime dir for pnpm
+		if err := g.copyFile(filepath.Join(installDir, "package.json"), filepath.Join(runtimeDir, "package.json")); err != nil {
+			return fmt.Errorf("failed to copy package.json: %w", err)
+		}
+		// Copy pnpm-lock.yaml if it exists
+		if _, err := os.Stat(filepath.Join(installDir, "pnpm-lock.yaml")); err == nil {
+			if err := g.copyFile(filepath.Join(installDir, "pnpm-lock.yaml"), filepath.Join(runtimeDir, "pnpm-lock.yaml")); err != nil {
+				logf(g.logger, "Warning: Failed to copy pnpm-lock.yaml: %v", err)
+			}
+		}
+		cmd = exec.CommandContext(ctx, "pnpm", "install")
+		cmd.Dir = runtimeDir
 	default:
 		return fmt.Errorf("unsupported Node.js package manager: %s", manager)
 	}
-	
+
 	// Add environment variables
 	env := os.Environ()
 	for k, v := range options.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 	cmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("failed to install Node.js dependencies: %w", err)
 	}
-	
+
 	return nil
 }
 
 // installPythonDependencies installs Python dependencies
 func (g *GitInstaller) installPythonDependencies(ctx context.Context, installDir, runtimeDir, manager string, options GitInstallOptions) error {
 	logf(g.logger, "Installing Python dependencies with %s...", manager)
-	
+
 	// Create virtual environment
 	venvDir := filepath.Join(runtimeDir, "venv")
 	cmd := exec.CommandContext(ctx, "python3", "-m", "venv", venvDir)
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("failed to create virtual environment: %w", err)
 	}
-	
+
 	// Determine pip executable path
 	pipExec := filepath.Join(venvDir, "bin", "pip")
 	if _, err := os.Stat(pipExec); err != nil {
 		pipExec = filepath.Join(venvDir, "Scripts", "pip.exe") // Windows
 	}
-	
+
 	var installCmd *exec.Cmd
 	switch manager {
 	case "pip":
@@ -412,107 +438,107 @@ func (g *GitInstaller) installPythonDependencies(ctx context.Context, installDir
 	default:
 		return fmt.Errorf("unsupported Python package manager: %s", manager)
 	}
-	
+
 	// Add environment variables
 	env := os.Environ()
 	for k, v := range options.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 	installCmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, installCmd); err != nil {
 		return fmt.Errorf("failed to install Python dependencies: %w", err)
 	}
-	
+
 	return nil
 }
 
 // installGoDependencies installs Go dependencies
 func (g *GitInstaller) installGoDependencies(ctx context.Context, installDir string, options GitInstallOptions) error {
 	logf(g.logger, "Installing Go dependencies...")
-	
+
 	cmd := exec.CommandContext(ctx, "go", "mod", "download")
 	cmd.Dir = installDir
-	
+
 	// Add environment variables
 	env := os.Environ()
 	for k, v := range options.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 	cmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("failed to download Go dependencies: %w", err)
 	}
-	
+
 	// Build the Go project
 	cmd = exec.CommandContext(ctx, "go", "build", "-o", "server")
 	cmd.Dir = installDir
 	cmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("failed to build Go project: %w", err)
 	}
-	
+
 	return nil
 }
 
 // installRustDependencies installs Rust dependencies
 func (g *GitInstaller) installRustDependencies(ctx context.Context, installDir string, options GitInstallOptions) error {
 	logf(g.logger, "Installing Rust dependencies...")
-	
+
 	cmd := exec.CommandContext(ctx, "cargo", "build", "--release")
 	cmd.Dir = installDir
-	
+
 	// Add environment variables
 	env := os.Environ()
 	for k, v := range options.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 	cmd.Env = env
-	
+
 	if _, _, err := g.runCommand(ctx, cmd); err != nil {
 		return fmt.Errorf("failed to build Rust project: %w", err)
 	}
-	
+
 	return nil
 }
 
 // runPostInstallCommands executes user-defined post-install commands
 func (g *GitInstaller) runPostInstallCommands(ctx context.Context, installDir string, options GitInstallOptions) error {
 	logf(g.logger, "Running post-install commands...")
-	
+
 	for i, cmdStr := range options.PostInstall {
 		logf(g.logger, "Running post-install command %d: %s", i+1, cmdStr)
-		
+
 		// Parse command and arguments
 		parts := strings.Fields(cmdStr)
 		if len(parts) == 0 {
 			continue
 		}
-		
+
 		cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 		cmd.Dir = installDir
-		
+
 		// Add environment variables
 		env := os.Environ()
 		for k, v := range options.Environment {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		cmd.Env = env
-		
+
 		if _, _, err := g.runCommand(ctx, cmd); err != nil {
 			return fmt.Errorf("post-install command failed: %s: %w", cmdStr, err)
 		}
 	}
-	
+
 	return nil
 }
 
 // detectEntryPoint tries to detect the main entry point for the MCP server
 func (g *GitInstaller) detectEntryPoint(installDir, runtime string) (command string, args []string, env map[string]string, err error) {
 	env = make(map[string]string)
-	
+
 	switch runtime {
 	case "node":
 		return g.detectNodeEntryPoint(installDir, env)
@@ -552,7 +578,7 @@ func (g *GitInstaller) detectNodeEntryPoint(installDir string, env map[string]st
 			}
 		}
 	}
-	
+
 	// Fallback to common entry points
 	commonEntries := []string{"index.js", "main.js", "server.js", "src/index.js", "src/main.js"}
 	for _, entry := range commonEntries {
@@ -560,7 +586,7 @@ func (g *GitInstaller) detectNodeEntryPoint(installDir string, env map[string]st
 			return "node", []string{filepath.Join(installDir, entry)}, env, nil
 		}
 	}
-	
+
 	return "", nil, env, fmt.Errorf("no Node.js entry point found")
 }
 
@@ -581,7 +607,7 @@ func (g *GitInstaller) detectPythonEntryPoint(installDir string, env map[string]
 			}
 		}
 	}
-	
+
 	// Check for common Python entry points
 	commonEntries := []string{"main.py", "__main__.py", "server.py", "app.py", "src/main.py"}
 	for _, entry := range commonEntries {
@@ -589,12 +615,12 @@ func (g *GitInstaller) detectPythonEntryPoint(installDir string, env map[string]
 			return "python3", []string{filepath.Join(installDir, entry)}, env, nil
 		}
 	}
-	
+
 	// Check if it's a package with __main__.py
 	if _, err := os.Stat(filepath.Join(installDir, "__main__.py")); err == nil {
 		return "python3", []string{"-m", filepath.Base(installDir)}, env, nil
 	}
-	
+
 	return "", nil, env, fmt.Errorf("no Python entry point found")
 }
 
@@ -605,7 +631,7 @@ func (g *GitInstaller) detectGoEntryPoint(installDir string, env map[string]stri
 	if _, err := os.Stat(binaryPath); err == nil {
 		return binaryPath, []string{}, env, nil
 	}
-	
+
 	// Look for main.go and try to infer binary name
 	if _, err := os.Stat(filepath.Join(installDir, "main.go")); err == nil {
 		// Try to find built binary with different names
@@ -616,11 +642,11 @@ func (g *GitInstaller) detectGoEntryPoint(installDir string, env map[string]stri
 				return binaryPath, []string{}, env, nil
 			}
 		}
-		
+
 		// If no binary found, we might need to build it
 		return "", nil, env, fmt.Errorf("Go binary not found, may need to build")
 	}
-	
+
 	return "", nil, env, fmt.Errorf("no Go entry point found")
 }
 
@@ -635,7 +661,7 @@ func (g *GitInstaller) detectRustEntryPoint(installDir string, env map[string]st
 			}
 		}
 	}
-	
+
 	return "", nil, env, fmt.Errorf("no Rust binary found")
 }
 
@@ -646,7 +672,7 @@ func (g *GitInstaller) detectBinaryEntryPoint(installDir string, env map[string]
 	if err != nil {
 		return "", nil, env, err
 	}
-	
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			fullPath := filepath.Join(installDir, entry.Name())
@@ -655,40 +681,67 @@ func (g *GitInstaller) detectBinaryEntryPoint(installDir string, env map[string]
 			}
 		}
 	}
-	
+
 	return "", nil, env, fmt.Errorf("no executable binary found")
 }
 
 // createBinScript creates an executable script in the bin directory
 func (g *GitInstaller) createBinScript(binDir, slug, command string, args []string, env map[string]string) error {
 	scriptPath := filepath.Join(binDir, slug)
-	
+
 	// Create a shell script that executes the MCP server
 	var script strings.Builder
-	script.WriteString("#!/bin/sh\n")
-	script.WriteString("# Generated MCP server launcher\n\n")
-	
-	// Add environment variables
-	for k, v := range env {
-		script.WriteString(fmt.Sprintf("export %s=%s\n", k, v))
-	}
-	
-	// Add the command
-	if command != "" {
-		script.WriteString(fmt.Sprintf("exec %s", command))
-		for _, arg := range args {
-			script.WriteString(fmt.Sprintf(" %s", arg))
+
+	// Check if we're on Windows
+	if os.PathSeparator == '\\' {
+		// Create a Windows batch file
+		scriptPath += ".bat"
+		script.WriteString("@echo off\n")
+		script.WriteString("REM Generated MCP server launcher\n\n")
+
+		// Add environment variables
+		for k, v := range env {
+			script.WriteString(fmt.Sprintf("set %s=%s\n", k, v))
 		}
-		script.WriteString(" \"$@\"\n")
+
+		// Add the command
+		if command != "" {
+			script.WriteString(fmt.Sprintf("\"%s\"", command))
+			for _, arg := range args {
+				script.WriteString(fmt.Sprintf(" \"%s\"", arg))
+			}
+			script.WriteString(" %*\n")
+		} else {
+			script.WriteString("echo No entry point configured for this MCP server\n")
+			script.WriteString("exit /b 1\n")
+		}
 	} else {
-		script.WriteString("echo 'No entry point configured for this MCP server'\n")
-		script.WriteString("exit 1\n")
+		// Create a Unix shell script
+		script.WriteString("#!/bin/sh\n")
+		script.WriteString("# Generated MCP server launcher\n\n")
+
+		// Add environment variables
+		for k, v := range env {
+			script.WriteString(fmt.Sprintf("export %s=%s\n", k, v))
+		}
+
+		// Add the command
+		if command != "" {
+			script.WriteString(fmt.Sprintf("exec %s", command))
+			for _, arg := range args {
+				script.WriteString(fmt.Sprintf(" %s", arg))
+			}
+			script.WriteString(" \"$@\"\n")
+		} else {
+			script.WriteString("echo 'No entry point configured for this MCP server'\n")
+			script.WriteString("exit 1\n")
+		}
 	}
-	
+
 	if err := os.WriteFile(scriptPath, []byte(script.String()), 0o755); err != nil {
 		return fmt.Errorf("failed to write script: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -720,13 +773,13 @@ func (g *GitInstaller) copyFile(src, dst string) error {
 		return err
 	}
 	defer sourceFile.Close()
-	
+
 	destFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer destFile.Close()
-	
+
 	_, err = io.Copy(destFile, sourceFile)
 	return err
 }
@@ -745,7 +798,7 @@ func (g *GitInstaller) runCommand(ctx context.Context, cmd *exec.Cmd) (stdout, s
 	if g.runner != nil {
 		return g.runner.Run(ctx, cmd.Path, cmd.Args[1:]...)
 	}
-	
+
 	// Fallback to direct execution
 	return ExecRunner{}.Run(ctx, cmd.Path, cmd.Args[1:]...)
 }

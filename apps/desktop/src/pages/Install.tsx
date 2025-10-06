@@ -2,13 +2,7 @@ import { AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import React from 'react'
 import { 
   fetchInstallHistory, 
-  finalizeInstallation, 
-  type InstallInput, 
-  type InstallValidation, 
   installCancel, 
-  installLogs, 
-  installStart, 
-  installValidate,
   installStartAdvanced,
   installLogsAdvanced,
   finalizeInstallationAdvanced,
@@ -37,7 +31,7 @@ type InstallProgress = {
   stage: 'validating' | 'downloading' | 'installing' | 'configuring' | 'finalizing'
   progress: number
   message: string
-  logs: LogEntry[]
+  logs?: LogEntry[]
   done: boolean
   success?: boolean
   error?: string
@@ -80,15 +74,78 @@ export function Install() {
     loadHistory()
   }, [loadHistory])
 
+  // Auto-generate slug from URI when URI changes
+  React.useEffect(() => {
+    if (uri.trim() && !slug.trim()) {
+      // Generate slug from URI
+      let generatedSlug = ''
+      
+      if (source === 'git') {
+        // For git URLs, extract repository name
+        const urlParts = uri.split('/')
+        const repoName = urlParts[urlParts.length - 1]
+        generatedSlug = repoName.replace(/\.git$/, '').toLowerCase()
+      } else if (source === 'npm') {
+        // For npm packages, use the package name directly
+        generatedSlug = uri.toLowerCase()
+      } else if (source === 'pip') {
+        // For pip packages, use the package name directly
+        generatedSlug = uri.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      } else {
+        // Fallback: extract from URI
+        const urlParts = uri.split('/')
+        generatedSlug = urlParts[urlParts.length - 1].toLowerCase()
+      }
+      
+      // Clean up the slug (remove invalid characters)
+      generatedSlug = generatedSlug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+      
+      if (generatedSlug) {
+        setSlug(generatedSlug)
+      }
+    }
+  }, [uri, source, slug])
+
   const onValidate = async () => {
     setValidationInProgress(true)
     setValidation(null)
     try {
-      const res = await installValidate({ type: source, uri })
-      setValidation(res)
-      if (res.slug) setSlug(res.slug)
-      if (res.runtime) setRuntime(res.runtime)
-      if (res.manager) setPkgMgr(res.manager)
+      // Basic validation - check required fields
+      const problems: string[] = []
+      
+      if (!uri.trim()) {
+        problems.push('URI is required')
+      }
+      
+      // Generate slug if not provided
+      let finalSlug = slug.trim()
+      if (!finalSlug && uri.trim()) {
+        if (source === 'git') {
+          const urlParts = uri.split('/')
+          const repoName = urlParts[urlParts.length - 1]
+          finalSlug = repoName.replace(/\.git$/, '').toLowerCase()
+        } else if (source === 'npm') {
+          finalSlug = uri.toLowerCase()
+        } else if (source === 'pip') {
+          finalSlug = uri.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+        } else {
+          const urlParts = uri.split('/')
+          finalSlug = urlParts[urlParts.length - 1].toLowerCase()
+        }
+        
+        // Clean up the slug
+        finalSlug = finalSlug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+      }
+      
+      if (!finalSlug) {
+        problems.push('Slug is required and could not be generated from URI')
+      }
+      
+      if (problems.length > 0) {
+        setValidation({ ok: false, problems, slug: '' })
+      } else {
+        setValidation({ ok: true, problems: [], slug: finalSlug })
+      }
     } catch (e) {
       setValidation({ ok: false, problems: [(e as Error).message], slug: '' })
     } finally {
@@ -99,6 +156,33 @@ export function Install() {
   const canInstall = validation?.ok && !busy
   const onInstall = async () => {
     if (!canInstall) return
+    
+    // Generate final slug if needed
+    let finalSlug = slug.trim()
+    if (!finalSlug && uri.trim()) {
+      if (source === 'git') {
+        const urlParts = uri.split('/')
+        const repoName = urlParts[urlParts.length - 1]
+        finalSlug = repoName.replace(/\.git$/, '').toLowerCase()
+      } else if (source === 'npm') {
+        finalSlug = uri.toLowerCase()
+      } else if (source === 'pip') {
+        finalSlug = uri.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      } else {
+        const urlParts = uri.split('/')
+        finalSlug = urlParts[urlParts.length - 1].toLowerCase()
+      }
+      
+      // Clean up the slug
+      finalSlug = finalSlug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+    }
+    
+    // Additional validation before API call
+    if (!uri.trim() || !finalSlug) {
+      setValidation({ ok: false, problems: ['URI and slug are required'], slug: '' })
+      return
+    }
+    
     setBusy(true)
     setCurrentJob({
       id: '',
@@ -111,16 +195,38 @@ export function Install() {
     
     try {
       // Use the new advanced installation system
-      const result = await installStartAdvanced({ 
-        type: source, 
-        uri, 
-        slug,
-        options: {
-          runtime: runtime !== 'auto' ? runtime : undefined,
-          manager: pkgMgr !== 'auto' ? pkgMgr : undefined
-        }
-      })
-      const jobId = result?.jobId || `job-${Date.now()}`
+      console.log('Starting installation with:', { source, uri, slug: finalSlug, runtime, pkgMgr })
+      
+      let result
+      try {
+        result = await installStartAdvanced({ 
+          type: source, 
+          uri, 
+          slug: finalSlug,
+          options: {
+            runtime: runtime !== 'auto' ? runtime : undefined,
+            manager: pkgMgr !== 'auto' ? pkgMgr : undefined
+          }
+        })
+      } catch (apiError) {
+        console.error('API call failed:', apiError)
+        throw new Error(`API call failed: ${apiError.message}`)
+      }
+      
+      console.log('Installation start result:', result)
+      console.log('Result type:', typeof result)
+      console.log('Result keys:', result ? Object.keys(result) : 'null/undefined')
+      console.log('Job ID check:', result?.jobId)
+      console.log('Job ID type:', typeof result?.jobId)
+      
+      if (!result?.jobId) {
+        console.error('No job ID returned from backend:', result)
+        console.error('Full response object:', JSON.stringify(result, null, 2))
+        throw new Error('Failed to start installation: No job ID returned from backend')
+      }
+      
+      const jobId = result.jobId
+      console.log('Using job ID:', jobId)
       setCurrentJob(prev => prev ? { ...prev, id: jobId } : null)
       
       const poll = async () => {
@@ -150,20 +256,33 @@ export function Install() {
             setValidation({ 
               ok: res.status === 'completed', 
               problems: res.status === 'failed' ? [res.message || 'Installation failed'] : [], 
-              slug 
+              slug: finalSlug 
             })
             return
           }
           setTimeout(poll, 1000)
         } catch (pollError) {
           console.error('Polling error:', pollError)
+          const errorMessage = (pollError as Error).message
+          
+          // Check if it's a job not found error
+          if (errorMessage.includes('Job not found') || errorMessage.includes('not found')) {
+            setCurrentJob(prev => prev ? {
+              ...prev,
+              done: true,
+              success: false,
+              error: `Job not found: ${jobId}. The installation may have been cleaned up or the job ID is invalid.`
+            } : null)
+          } else {
+            setCurrentJob(prev => prev ? {
+              ...prev,
+              done: true,
+              success: false,
+              error: errorMessage
+            } : null)
+          }
+          
           setBusy(false)
-          setCurrentJob(prev => prev ? {
-            ...prev,
-            done: true,
-            success: false,
-            error: (pollError as Error).message
-          } : null)
         }
       }
       poll()
@@ -175,7 +294,7 @@ export function Install() {
         success: false,
         error: (e as Error).message
       } : null)
-      setValidation({ ok: false, problems: [(e as Error).message], slug })
+          setValidation({ ok: false, problems: [(e as Error).message], slug: finalSlug })
     }
   }
 
@@ -473,7 +592,7 @@ export function Install() {
             <div className="text-sm font-medium mb-2">Logs</div>
             <ScrollArea className="h-80 w-full border rounded-lg">
               <div className="p-3 text-xs bg-black text-green-400 font-mono min-h-full">
-                {currentJob?.logs.length ? (
+                {currentJob?.logs && currentJob.logs.length > 0 ? (
                   currentJob.logs.map((line, i) => {
                     // Handle both string logs (old format) and object logs (new format)
                     const logText = typeof line === 'string' ? line : line.message || JSON.stringify(line);

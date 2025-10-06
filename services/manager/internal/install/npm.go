@@ -520,7 +520,11 @@ func (n *NPMInstaller) determineEntryPoint(options NPMInstallOptions, packageInf
 
 	// Add node_modules/.bin to PATH
 	binPath := filepath.Join(runtimeDir, "node_modules", ".bin")
-	env["PATH"] = fmt.Sprintf("%s:%s", binPath, os.Getenv("PATH"))
+	pathSeparator := ":"
+	if os.PathSeparator == '\\' { // Windows
+		pathSeparator = ";"
+	}
+	env["PATH"] = fmt.Sprintf("%s%s%s", binPath, pathSeparator, os.Getenv("PATH"))
 
 	// MCP-specific configuration takes priority
 	if options.MCPConfig != nil {
@@ -591,7 +595,11 @@ func (n *NPMInstaller) runPostInstallCommands(ctx context.Context, runtimeDir st
 		}
 		// Add node_modules/.bin to PATH
 		binPath := filepath.Join(runtimeDir, "node_modules", ".bin")
-		env = append(env, fmt.Sprintf("PATH=%s:%s", binPath, os.Getenv("PATH")))
+		pathSeparator := ":"
+		if os.PathSeparator == '\\' { // Windows
+			pathSeparator = ";"
+		}
+		env = append(env, fmt.Sprintf("PATH=%s%s%s", binPath, pathSeparator, os.Getenv("PATH")))
 		cmd.Env = env
 
 		stdout, stderr, err := n.runner.Run(ctx, cmd.Path, cmd.Args[1:]...)
@@ -609,24 +617,51 @@ func (n *NPMInstaller) createBinScript(binDir, slug, command string, args []stri
 
 	// Create a shell script that executes the MCP server
 	var script strings.Builder
-	script.WriteString("#!/bin/sh\n")
-	script.WriteString("# Generated MCP server launcher\n\n")
 
-	// Add environment variables
-	for k, v := range env {
-		script.WriteString(fmt.Sprintf("export %s=\"%s\"\n", k, v))
-	}
+	// Check if we're on Windows
+	if os.PathSeparator == '\\' {
+		// Create a Windows batch file
+		scriptPath += ".bat"
+		script.WriteString("@echo off\n")
+		script.WriteString("REM Generated MCP server launcher\n\n")
 
-	// Add the command
-	if command != "" {
-		script.WriteString(fmt.Sprintf("exec \"%s\"", command))
-		for _, arg := range args {
-			script.WriteString(fmt.Sprintf(" \"%s\"", arg))
+		// Add environment variables
+		for k, v := range env {
+			script.WriteString(fmt.Sprintf("set %s=%s\n", k, v))
 		}
-		script.WriteString(" \"$@\"\n")
+
+		// Add the command
+		if command != "" {
+			script.WriteString(fmt.Sprintf("\"%s\"", command))
+			for _, arg := range args {
+				script.WriteString(fmt.Sprintf(" \"%s\"", arg))
+			}
+			script.WriteString(" %*\n")
+		} else {
+			script.WriteString("echo No entry point configured for this MCP server\n")
+			script.WriteString("exit /b 1\n")
+		}
 	} else {
-		script.WriteString("echo 'No entry point configured for this MCP server'\n")
-		script.WriteString("exit 1\n")
+		// Create a Unix shell script
+		script.WriteString("#!/bin/sh\n")
+		script.WriteString("# Generated MCP server launcher\n\n")
+
+		// Add environment variables
+		for k, v := range env {
+			script.WriteString(fmt.Sprintf("export %s=\"%s\"\n", k, v))
+		}
+
+		// Add the command
+		if command != "" {
+			script.WriteString(fmt.Sprintf("exec \"%s\"", command))
+			for _, arg := range args {
+				script.WriteString(fmt.Sprintf(" \"%s\"", arg))
+			}
+			script.WriteString(" \"$@\"\n")
+		} else {
+			script.WriteString("echo 'No entry point configured for this MCP server'\n")
+			script.WriteString("exit 1\n")
+		}
 	}
 
 	if err := os.WriteFile(scriptPath, []byte(script.String()), 0o755); err != nil {

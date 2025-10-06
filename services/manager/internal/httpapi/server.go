@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"mcp/manager/internal/clients"
@@ -24,8 +23,6 @@ type Server struct {
 	sup               Supervisor
 	healthMonitor     HealthMonitor
 	logStreamer       LogStreamer
-	jobs              map[string]*job
-	jobsMu            sync.Mutex
 	installService    *install.AdvancedInstallationService
 	credentialManager *CredentialManager
 }
@@ -64,7 +61,7 @@ type LogStreamer interface {
 }
 
 func NewServer(reg *registry.Registry) *Server {
-	return &Server{reg: reg, jobs: map[string]*job{}}
+	return &Server{reg: reg}
 }
 
 func (s *Server) WithSupervisor(sup Supervisor) *Server {
@@ -110,8 +107,6 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("/v1/logs/", s.handleLogs)             // /v1/logs/{slug}
 
 	// Installation endpoints
-	mux.HandleFunc("/v1/install/validate", s.handleInstallValidate)
-	mux.HandleFunc("/v1/install/perform", s.handleInstallPerform)
 	mux.HandleFunc("/v1/install/start", s.handleInstallStart)
 	mux.HandleFunc("/v1/install/logs", s.handleInstallLogs)
 	mux.HandleFunc("/v1/install/cancel", s.handleInstallCancel)
@@ -559,44 +554,6 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleInstallValidate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	var in install.Input
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	res, err := install.Validate(r.Context(), in, install.ExecRunner{})
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error(), "result": res})
-		return
-	}
-	writeJSON(w, res)
-}
-
-func (s *Server) handleInstallPerform(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	var in install.PerformInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	res, err := install.Perform(r.Context(), in, install.ExecRunner{})
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
-		return
-	}
-	writeJSON(w, res)
-}
-
 func (s *Server) handleClientsDetect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -739,7 +696,11 @@ func (s *Server) handleClientsAdopt(w http.ResponseWriter, r *http.Request) {
 	// Save the updated registry
 	registryPath := os.Getenv("MCP_REGISTRY_PATH")
 	if registryPath == "" {
-		registryPath = filepath.Join(os.Getenv("HOME"), ".mcp", "registry.json")
+		homeDir := os.Getenv("HOME")
+		if homeDir == "" {
+			homeDir = os.Getenv("USERPROFILE") // Windows fallback
+		}
+		registryPath = filepath.Join(homeDir, ".mcp", "registry.json")
 	}
 
 	if err := s.reg.Save(registryPath); err != nil {

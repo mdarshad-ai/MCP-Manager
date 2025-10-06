@@ -26,16 +26,16 @@ type ExternalServerRequest struct {
 
 // ExternalServerResponse represents the response for external server operations
 type ExternalServerResponse struct {
-	Name        string                 `json:"name"`
-	Slug        string                 `json:"slug"`
-	Provider    string                 `json:"provider"`
-	DisplayName string                 `json:"displayName"`
+	Name        string                  `json:"name"`
+	Slug        string                  `json:"slug"`
+	Provider    string                  `json:"provider"`
+	DisplayName string                  `json:"displayName"`
 	Status      registry.ExternalStatus `json:"status"`
-	Config      map[string]interface{} `json:"config,omitempty"`
-	AutoStart   bool                   `json:"autoStart"`
-	LastSync    *time.Time             `json:"lastSync,omitempty"`
-	APIEndpoint string                 `json:"apiEndpoint"`
-	AuthType    string                 `json:"authType"`
+	Config      map[string]interface{}  `json:"config,omitempty"`
+	AutoStart   bool                    `json:"autoStart"`
+	LastSync    *time.Time              `json:"lastSync,omitempty"`
+	APIEndpoint string                  `json:"apiEndpoint"`
+	AuthType    string                  `json:"authType"`
 }
 
 // ExternalServerTestResponse represents the response for connection testing
@@ -47,15 +47,15 @@ type ExternalServerTestResponse struct {
 
 // ExternalProviderResponse represents provider template information
 type ExternalProviderResponse struct {
-	Name           string                    `json:"name"`
-	DisplayName    string                    `json:"displayName"`
-	Description    string                    `json:"description"`
-	AuthType       string                    `json:"authType"`
-	BaseURL        string                    `json:"baseUrl"`
-	HealthEndpoint string                    `json:"healthEndpoint"`
-	Credentials    []providers.Credential    `json:"credentials"`
-	ConfigSchema   map[string]interface{}    `json:"configSchema,omitempty"`
-	Tags           []string                  `json:"tags,omitempty"`
+	Name           string                 `json:"name"`
+	DisplayName    string                 `json:"displayName"`
+	Description    string                 `json:"description"`
+	AuthType       string                 `json:"authType"`
+	BaseURL        string                 `json:"baseUrl"`
+	HealthEndpoint string                 `json:"healthEndpoint"`
+	Credentials    []providers.Credential `json:"credentials"`
+	ConfigSchema   map[string]interface{} `json:"configSchema,omitempty"`
+	Tags           []string               `json:"tags,omitempty"`
 }
 
 // handleExternalMCPs handles requests to /v1/external/servers
@@ -168,9 +168,13 @@ func (s *Server) handleGetExternalServer(w http.ResponseWriter, r *http.Request,
 
 // handleCreateExternalServer handles POST /v1/external/servers
 func (s *Server) ensureCredentialManager() error {
-	if s.credentialManager != nil { return nil }
+	if s.credentialManager != nil {
+		return nil
+	}
 	cm, err := NewCredentialManager()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	s.credentialManager = cm
 	return nil
 }
@@ -355,7 +359,7 @@ func (s *Server) handleUpdateExternalServer(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, map[string]string{"error": fmt.Sprintf("Unknown provider: %s", req.Provider)})
 			return
 		}
-		
+
 		// Validate credentials for new provider
 		if err := providers.ValidateProviderConfig(req.Provider, req.Credentials); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -485,7 +489,9 @@ func (s *Server) handleDeleteExternalServer(w http.ResponseWriter, r *http.Reque
 		credRef := s.reg.Servers[serverIndex].External.CredentialRef
 		if credRef != "" {
 			_ = s.ensureCredentialManager()
-			if s.credentialManager != nil { _ = s.credentialManager.vault.Delete(credRef) }
+			if s.credentialManager != nil {
+				_ = s.credentialManager.vault.Delete(credRef)
+			}
 		}
 	}
 
@@ -535,7 +541,7 @@ func (s *Server) handleTestExternalServer(w http.ResponseWriter, r *http.Request
 
 	// Perform health check
 	start := time.Now()
-	
+
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -677,7 +683,11 @@ func (s *Server) handleGetProvider(w http.ResponseWriter, r *http.Request) {
 func (s *Server) saveRegistry() error {
 	registryPath := os.Getenv("MCP_REGISTRY_PATH")
 	if registryPath == "" {
-		registryPath = filepath.Join(os.Getenv("HOME"), ".mcp", "registry.json")
+		homeDir := os.Getenv("HOME")
+		if homeDir == "" {
+			homeDir = os.Getenv("USERPROFILE") // Windows fallback
+		}
+		registryPath = filepath.Join(homeDir, ".mcp", "registry.json")
 	}
 	return s.reg.Save(registryPath)
 }

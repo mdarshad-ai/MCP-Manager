@@ -10,9 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { ScrollArea } from "../components/ui/scroll-area";
 import { useToast } from "../hooks/use-toast";
 import { 
-  installStart, 
-  installLogs, 
-  finalizeInstallation, 
   installStartAdvanced,
   installLogsAdvanced,
   finalizeInstallationAdvanced,

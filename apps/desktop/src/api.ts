@@ -21,62 +21,7 @@ export async function serverAction(slug: string, action: "start" | "stop" | "res
   if (!r.ok) throw new Error(`action ${r.status}`);
 }
 
-export type InstallInput = { type: "git" | "npm" | "pip" | "docker-image" | "docker-compose"; uri: string };
-export type InstallValidation = { ok: boolean; problems: string[]; slug: string; runtime?: string; manager?: string };
 
-export async function installValidate(input: InstallInput): Promise<InstallValidation> {
-  const r = await fetch(`${BASE}/v1/install/validate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!r.ok) throw new Error(`validate ${r.status}`);
-  return r.json();
-}
-
-export type InstallPerformInput = InstallInput & { slug: string; runtime?: string; manager?: string };
-export type InstallPerformResult = { ok: boolean; logs: string[]; message?: string };
-
-export async function installPerform(input: InstallPerformInput): Promise<InstallPerformResult> {
-  const r = await fetch(`${BASE}/v1/install/perform`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!r.ok) throw new Error(`perform ${r.status}`);
-  return r.json();
-}
-
-export async function installStart(input: InstallPerformInput): Promise<{ id: string }> {
-  const r = await fetch(`${BASE}/v1/install/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!r.ok) throw new Error("install start failed");
-  const data = await r.json();
-  // Backend returns jobId, but we expect id
-  return { id: data.jobId || data.id };
-}
-
-export async function installLogs(
-  id: string,
-): Promise<{ id: string; logs: string[]; done: boolean; ok: boolean; message?: string }> {
-  const r = await fetch(`${BASE}/v1/install/logs?id=${encodeURIComponent(id)}`);
-  if (!r.ok) throw new Error("install logs failed");
-  const data = await r.json();
-
-  // Transform backend response to match frontend expectations
-  return {
-    id: data.id,
-    logs: data.logs
-      ? data.logs.map((log: any) => (typeof log === "string" ? log : `[${log.level}] ${log.message}`))
-      : [],
-    done: data.status === "completed" || data.status === "failed",
-    ok: data.status === "completed" && data.result?.success,
-    message: data.result?.message || (data.status === "completed" ? "Installation completed" : undefined),
-  };
-}
 
 export async function installCancel(id: string): Promise<void> {
   const r = await fetch(`${BASE}/v1/install/cancel?id=${encodeURIComponent(id)}`, { method: "POST" });
@@ -304,14 +249,6 @@ export async function fetchInstallHistory(): Promise<
   return r.json();
 }
 
-export async function finalizeInstallation(id: string): Promise<void> {
-  const r = await fetch(`${BASE}/v1/install/finalize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id }),
-  });
-  if (!r.ok) throw new Error("install finalize failed");
-}
 
 // Client configuration management
 export async function openConfigFile(client: string): Promise<void> {
@@ -570,7 +507,7 @@ export type AdvancedInstallStatus = {
   stage: string;
   progress: number;
   message: string;
-  logs: string[];
+  logs?: string[];
   result?: {
     success: boolean;
     message?: string;
@@ -578,13 +515,27 @@ export type AdvancedInstallStatus = {
 };
 
 export async function installStartAdvanced(request: AdvancedInstallRequest): Promise<AdvancedInstallResponse> {
+  console.log('installStartAdvanced request:', request);
+  console.log('Request URL:', `${BASE}/v1/install/start`);
+  
   const r = await fetch(`${BASE}/v1/install/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
-  if (!r.ok) throw new Error(`advanced install start failed: ${r.status}`);
-  return r.json();
+  
+  console.log('Response status:', r.status);
+  console.log('Response ok:', r.ok);
+  
+  if (!r.ok) {
+    const errorText = await r.text();
+    console.error('Response error text:', errorText);
+    throw new Error(`advanced install start failed: ${r.status} - ${errorText}`);
+  }
+  
+  const response = await r.json();
+  console.log('Response data:', response);
+  return response;
 }
 
 export async function installLogsAdvanced(jobId: string): Promise<AdvancedInstallStatus> {
