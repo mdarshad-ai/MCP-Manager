@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -401,12 +402,12 @@ func (g *GitInstaller) installPythonDependencies(ctx context.Context, installDir
 
 	// Create virtual environment
 	venvDir := filepath.Join(runtimeDir, "venv")
-	
+
 	// Try different Python commands in order of preference
 	pythonCommands := []string{"python", "python3", "py"}
 	var cmd *exec.Cmd
 	var lastErr error
-	
+
 	for _, pythonCmd := range pythonCommands {
 		cmd = exec.CommandContext(ctx, pythonCmd, "-m", "venv", venvDir)
 		if _, _, err := g.runCommand(ctx, cmd); err == nil {
@@ -415,7 +416,7 @@ func (g *GitInstaller) installPythonDependencies(ctx context.Context, installDir
 			lastErr = err
 		}
 	}
-	
+
 	if lastErr != nil {
 		return fmt.Errorf("failed to create virtual environment: %w", lastErr)
 	}
@@ -433,8 +434,19 @@ func (g *GitInstaller) installPythonDependencies(ctx context.Context, installDir
 		reqFile := filepath.Join(installDir, "requirements.txt")
 		if _, err := os.Stat(reqFile); err == nil {
 			installCmd = exec.CommandContext(ctx, pipExec, "install", "-r", reqFile)
-		} else {
-			// Install the package itself
+		}
+		
+		// Also install the package itself in editable mode if pyproject.toml exists
+		pyprojectFile := filepath.Join(installDir, "pyproject.toml")
+		if _, err := os.Stat(pyprojectFile); err == nil {
+			// Install package in editable mode to ensure console scripts are available
+			editableCmd := exec.CommandContext(ctx, pipExec, "install", "-e", ".")
+			editableCmd.Dir = installDir
+			if _, _, err := g.runCommand(ctx, editableCmd); err != nil {
+				logf(g.logger, "Warning: Failed to install package in editable mode: %v", err)
+			}
+		} else if installCmd == nil {
+			// Fallback: install the package itself if no requirements.txt and no pyproject.toml
 			installCmd = exec.CommandContext(ctx, pipExec, "install", ".")
 			installCmd.Dir = installDir
 		}
@@ -814,10 +826,10 @@ func isExecutable(path string) bool {
 
 // runCommand executes a command and logs output
 func (g *GitInstaller) runCommand(ctx context.Context, cmd *exec.Cmd) (stdout, stderr string, err error) {
-	if g.runner != nil {
-		return g.runner.Run(ctx, cmd.Path, cmd.Args[1:]...)
-	}
-
-	// Fallback to direct execution
-	return ExecRunner{}.Run(ctx, cmd.Path, cmd.Args[1:]...)
+	// Execute the command directly to preserve working directory and environment
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	err = cmd.Run()
+	return out.String(), errb.String(), err
 }
