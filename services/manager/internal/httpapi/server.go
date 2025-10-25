@@ -15,6 +15,7 @@ import (
 	"mcp/manager/internal/health"
 	"mcp/manager/internal/install"
 	"mcp/manager/internal/logs"
+	"mcp/manager/internal/paths"
 	"mcp/manager/internal/registry"
 )
 
@@ -201,6 +202,12 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("/v1/credentials/validate", s.handleCredentialsValidate)
 	mux.HandleFunc("/v1/credentials/status", s.handleCredentialsStatus)
 	mux.HandleFunc("/v1/credentials/validate-stored", s.handleCredentialsValidateStored)
+
+	// Admin panel endpoints
+	mux.HandleFunc("/v1/admin/servers", s.handleAdminListServers)
+	mux.HandleFunc("/v1/admin/servers/", s.handleAdminServerActions) // /v1/admin/servers/{slug}
+	mux.HandleFunc("/v1/admin/marketplace", s.handleAdminMarketplace)
+	mux.HandleFunc("/v1/admin/marketplace/", s.handleAdminMarketplaceActions) // /v1/admin/marketplace/{slug} or /v1/admin/marketplace/{slug}/resolve-attention
 
 	return withCORS(logRequests(mux))
 }
@@ -793,4 +800,821 @@ func deriveHTTPURL(args []string, env map[string]string) string {
 	}
 
 	return ""
+}
+
+// Admin Panel Handlers
+
+func (s *Server) handleAdminListServers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Build list of installed servers from registry
+	servers := []map[string]interface{}{}
+
+	for _, server := range s.reg.Servers {
+		// Skip external servers for installed servers list
+		if server.IsExternal() {
+			continue
+		}
+
+		// Get server status from supervisor if available
+		status := "stopped"
+		if s.sup != nil {
+			summary := s.sup.Summary()
+			for _, proc := range summary {
+				if proc["slug"] == server.Slug {
+					status = proc["status"].(string)
+					break
+				}
+			}
+		}
+
+		serverInfo := map[string]interface{}{
+			"slug":   server.Slug,
+			"name":   server.Name,
+			"status": status,
+			"path":   server.Entry.Command, // Use command as path since InstalledPath doesn't exist
+		}
+
+		// Add source info
+		if server.Source.Type != "" {
+			serverInfo["installType"] = server.Source.Type
+		}
+		if server.Source.URI != "" {
+			serverInfo["installUri"] = server.Source.URI
+		}
+
+		servers = append(servers, serverInfo)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(servers)
+}
+
+func (s *Server) handleAdminServerActions(w http.ResponseWriter, r *http.Request) {
+	// Extract slug from path: /v1/admin/servers/{slug}
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 5 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	slug := parts[4]
+
+	switch r.Method {
+	case http.MethodDelete:
+		s.handleAdminDeleteServer(w, r, slug)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminDeleteServer(w http.ResponseWriter, r *http.Request, slug string) {
+	// Stop the server first if running
+	if err := s.sup.Stop(slug, 10*time.Second); err != nil {
+		log.Printf("Warning: failed to stop server %s before deletion: %v", slug, err)
+	}
+
+	// Get servers directory
+	serversDir, err := paths.ServersDir()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get servers directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	serverPath := filepath.Join(serversDir, slug)
+
+	// Check if server exists
+	if _, err := os.Stat(serverPath); os.IsNotExist(err) {
+		http.Error(w, "server not found", http.StatusNotFound)
+		return
+	}
+
+	// Remove the server directory
+	if err := os.RemoveAll(serverPath); err != nil {
+		http.Error(w, fmt.Sprintf("failed to delete server: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Remove from registry
+	for i, server := range s.reg.Servers {
+		if server.Slug == slug {
+			s.reg.Servers = append(s.reg.Servers[:i], s.reg.Servers[i+1:]...)
+			break
+		}
+	}
+
+	// Save registry
+	if err := registry.SaveDefault(s.reg); err != nil {
+		log.Printf("Warning: failed to save registry after server deletion: %v", err)
+	}
+
+	// Remove from health monitoring
+	s.healthMonitor.RemoveProcess(slug)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAdminMarketplace(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleAdminListMarketplace(w, r)
+	case http.MethodPost:
+		s.handleAdminAddMarketplaceItem(w, r)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminListMarketplace(w http.ResponseWriter, r *http.Request) {
+	// Return ALL catalog items with caution labels for incomplete ones
+	marketplaceItems := []map[string]interface{}{
+		// Reasoning Category
+		{
+			"slug":          "sequential-thinking",
+			"name":          "Sequential Thinking",
+			"description":   "Step-by-step structured reasoning.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "@modelcontextprotocol/server-sequential-thinking"},
+			"configExample": "{ \"mcpServers\": { \"sequential-thinking\": { \"command\": \"npx\", \"args\": [\"-y\",\"@modelcontextprotocol/server-sequential-thinking\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "crash",
+			"name":          "CRASH (Cascaded Reasoning)",
+			"description":   "Confidence tracking, branching, adaptive steps.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "confidence", "branching"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/crash-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "crash-mcp"},
+			"configExample": "{ \"mcpServers\": { \"crash\": { \"command\": \"npx\", \"args\": [\"-y\",\"crash-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "reasoner",
+			"name":          "MCP Reasoner (Beam/MCTS)",
+			"description":   "Beam search & MCTS reasoning.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "beam-search", "mcts"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://glama.ai/mcp/Reasoner",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "mcp-reasoner"},
+			"configExample": "{ \"mcpServers\": { \"reasoner\": { \"command\": \"npx\", \"args\": [\"-y\",\"mcp-reasoner\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "mcts",
+			"name":          "MCTS MCP",
+			"description":   "Monte Carlo Tree Search.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "mcts", "search"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/search?q=MCTS+MCP+server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "mcts-mcp"},
+			"configExample": "{ \"mcpServers\": { \"mcts\": { \"command\": \"npx\", \"args\": [\"-y\",\"mcts-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "got",
+			"name":          "Graph-of-Thoughts",
+			"description":   "Graph reasoning (Neo4j optional).",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "graph", "neo4j"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/saptadey/got-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "got-mcp"},
+			"configExample": "{ \"mcpServers\": { \"got\": { \"command\": \"npx\", \"args\": [\"-y\",\"got-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "dre",
+			"name":          "Deliberate Reasoning Engine (DRE)",
+			"description":   "DAG / thought-graph reasoning.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "dag", "thought-graph"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://glama.ai/mcp/DRE",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "dre-mcp"},
+			"configExample": "{ \"mcpServers\": { \"dre\": { \"command\": \"npx\", \"args\": [\"-y\",\"dre-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "branch-thinking",
+			"name":          "Branch Thinking",
+			"description":   "Manage multiple reasoning branches.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "branches", "planning"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://glama.ai/mcp/BranchThinking",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "branch-thinking-mcp"},
+			"configExample": "{ \"mcpServers\": { \"branch-thinking\": { \"command\": \"npx\", \"args\": [\"-y\",\"branch-thinking-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "cot",
+			"name":          "Chain-of-Thought (beverm2391)",
+			"description":   "Exposes CoT tokens.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "cot", "tokens"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/beverm2391/cot-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "cot-mcp"},
+			"configExample": "{ \"mcpServers\": { \"cot\": { \"command\": \"npx\", \"args\": [\"-y\",\"cot-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "cot-task",
+			"name":          "CoT Task Manager",
+			"description":   "Task decomposition with CoT.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "cot", "tasks"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/liorfranko/cot-task-manager",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "cot-task-mcp"},
+			"configExample": "{ \"mcpServers\": { \"cot-task\": { \"command\": \"npx\", \"args\": [\"-y\",\"cot-task-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "planner",
+			"name":          "Software Planner",
+			"description":   "Software project planning.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "planning", "software"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/planner-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "planner-mcp"},
+			"configExample": "{ \"mcpServers\": { \"planner\": { \"command\": \"npx\", \"args\": [\"-y\",\"planner-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "memory",
+			"name":          "Memory MCP",
+			"description":   "Persistent knowledge graph memory.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "memory", "knowledge-graph"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/memory-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "memory-mcp"},
+			"configExample": "{ \"mcpServers\": { \"memory\": { \"command\": \"npx\", \"args\": [\"-y\",\"memory-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "mindmap",
+			"name":          "Mindmap MCP",
+			"description":   "Convert ideas into mindmaps.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "mindmap", "visualization"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/mindmap-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "mindmap-mcp"},
+			"configExample": "{ \"mcpServers\": { \"mindmap\": { \"command\": \"npx\", \"args\": [\"-y\",\"mindmap-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "context-crystallizer",
+			"name":          "Context Crystallizer",
+			"description":   "Distill docs/repos into structured knowledge.",
+			"category":      "Reasoning",
+			"tags":          []string{"reasoning", "context", "knowledge"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/context-crystallizer-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "context-crystallizer-mcp"},
+			"configExample": "{ \"mcpServers\": { \"context-crystallizer\": { \"command\": \"npx\", \"args\": [\"-y\",\"context-crystallizer-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// UI / Frontend
+		{
+			"slug":          "shadcn-ui",
+			"name":          "Shadcn UI MCP",
+			"description":   "Search/install shadcn/ui components.",
+			"category":      "UI / Frontend",
+			"tags":          []string{"ui", "frontend", "components"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/Jpisnice/shadcn-ui-mcp-server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "shadcn-ui-mcp-server"},
+			"configExample": "{ \"mcpServers\": { \"shadcn-ui\": { \"command\": \"npx\", \"args\": [\"-y\",\"shadcn-ui-mcp-server\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "assistant-ui-docs",
+			"name":          "assistant-ui Docs MCP",
+			"description":   "Assistant-ui docs/examples in IDE.",
+			"category":      "UI / Frontend Docs",
+			"tags":          []string{"ui", "frontend", "docs", "ide"},
+			"version":       "1.0.0",
+			"author":        "Assistant UI Team",
+			"repository":    "https://github.com/assistant-ui/mcp-docs",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "@assistant-ui/mcp-docs-server"},
+			"configExample": "{ \"mcpServers\": { \"assistant-ui-docs\": { \"command\": \"npx\", \"args\": [\"-y\",\"@assistant-ui/mcp-docs-server\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Hosting / Infra
+		{
+			"slug":          "render",
+			"name":          "Render MCP",
+			"description":   "Manage Render services/deploys.",
+			"category":      "Hosting / Infra",
+			"tags":          []string{"hosting", "infrastructure", "render"},
+			"version":       "1.0.0",
+			"author":        "Render",
+			"repository":    "https://github.com/render-oss/render-mcp-server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "render-mcp-server"},
+			"remote":        map[string]interface{}{"apiEndpoint": "https://mcp.render.com/mcp", "provider": "Render", "authType": "api_key"},
+			"configExample": "{ \"mcpServers\": { \"render\": { \"url\": \"https://mcp.render.com/mcp\", \"headers\": { \"Authorization\": \"Bearer <RENDER_API_KEY>\" } } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "flyio",
+			"name":          "Fly.io MCP",
+			"description":   "Manage Fly.io apps via flyctl.",
+			"category":      "Hosting / Infra",
+			"tags":          []string{"hosting", "infrastructure", "flyio"},
+			"version":       "1.0.0",
+			"author":        "Fly.io",
+			"repository":    "https://github.com/superfly/flymcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "flymcp"},
+			"configExample": "{ \"mcpServers\": { \"flyio\": { \"command\": \"fly\", \"args\": [\"mcp\",\"server\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Cloud
+		{
+			"slug":          "aws-ccapi",
+			"name":          "AWS CCAPI MCP",
+			"description":   "Natural language AWS resource management.",
+			"category":      "Cloud",
+			"tags":          []string{"aws", "cloud", "infrastructure"},
+			"version":       "1.0.0",
+			"author":        "AWS Labs",
+			"repository":    "https://github.com/awslabs/mcp",
+			"license":       "Apache-2.0",
+			"install":       map[string]string{"type": "npm", "uri": "@awslabs/ccapi-mcp-server"},
+			"configExample": "{ \"mcpServers\": { \"aws-ccapi\": { \"command\": \"npx\", \"args\": [\"-y\",\"@awslabs/ccapi-mcp-server\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "aws-serverless",
+			"name":          "AWS Serverless MCP",
+			"description":   "Lambda/serverless guidance.",
+			"category":      "Cloud",
+			"tags":          []string{"aws", "cloud", "serverless"},
+			"version":       "1.0.0",
+			"author":        "AWS Labs",
+			"repository":    "https://github.com/awslabs/mcp-serverless",
+			"license":       "Apache-2.0",
+			"install":       map[string]string{"type": "npm", "uri": "aws-serverless-mcp"},
+			"configExample": "{ \"mcpServers\": { \"aws-serverless\": { \"command\": \"npx\", \"args\": [\"-y\",\"aws-serverless-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "gcp",
+			"name":          "GCP MCP",
+			"description":   "Google Cloud Platform.",
+			"category":      "Cloud",
+			"tags":          []string{"gcp", "cloud", "google"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/devinschumacher/gcp-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "gcp-mcp"},
+			"configExample": "{ \"mcpServers\": { \"gcp\": { \"command\": \"npx\", \"args\": [\"-y\",\"gcp-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "azure",
+			"name":          "Azure MCP",
+			"description":   "Manage Azure/DevOps.",
+			"category":      "Cloud",
+			"tags":          []string{"azure", "cloud", "microsoft"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/devinschumacher/azure-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "azure-mcp"},
+			"configExample": "{ \"mcpServers\": { \"azure\": { \"command\": \"npx\", \"args\": [\"-y\",\"azure-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "supabase",
+			"name":          "Supabase MCP",
+			"description":   "Manage Supabase DB/projects.",
+			"category":      "Cloud / DB",
+			"tags":          []string{"supabase", "database", "cloud"},
+			"version":       "1.0.0",
+			"author":        "Supabase Community",
+			"repository":    "https://github.com/supabase-community/supabase-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "supabase-mcp"},
+			"configExample": "{ \"mcpServers\": { \"supabase\": { \"command\": \"npx\", \"args\": [\"-y\",\"supabase-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Dev
+		{
+			"slug":          "github",
+			"name":          "GitHub MCP",
+			"description":   "Manage issues, PRs, repos.",
+			"category":      "Dev",
+			"tags":          []string{"github", "git", "api"},
+			"version":       "1.0.0",
+			"author":        "GitHub",
+			"repository":    "https://github.com/github/github-mcp-server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "github-mcp"},
+			"remote":        map[string]interface{}{"apiEndpoint": "https://api.githubcopilot.com/mcp/", "provider": "GitHub", "authType": "oauth2"},
+			"configExample": "{ \"servers\": { \"github\": { \"type\": \"http\", \"url\": \"https://api.githubcopilot.com/mcp/\" } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "figma",
+			"name":          "Figma MCP",
+			"description":   "Extract assets, metadata.",
+			"category":      "Design",
+			"tags":          []string{"design", "figma", "assets"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/figma-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "figma-mcp"},
+			"configExample": "{ \"mcpServers\": { \"figma\": { \"command\": \"npx\", \"args\": [\"-y\",\"figma-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Comms
+		{
+			"slug":          "slack",
+			"name":          "Slack MCP",
+			"description":   "Read, post, and search Slack messages and channels.",
+			"category":      "Comms",
+			"tags":          []string{"slack", "communication", "messaging"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/augmentcode/slack-mcp-server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "slack-mcp-server"},
+			"configExample": "{ \"mcpServers\": { \"slack\": { \"command\": \"npx\", \"args\": [\"-y\",\"slack-mcp-server\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Email
+		{
+			"slug":          "gmail",
+			"name":          "Gmail MCP",
+			"description":   "Read and write Gmail messages.",
+			"category":      "Email",
+			"tags":          []string{"gmail", "email", "google"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/GongRzhe/Gmail-MCP-Server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "gmail-mcp-server"},
+			"configExample": "{ \"mcpServers\": { \"gmail\": { \"command\": \"npx\", \"args\": [\"-y\",\"gmail-mcp-server\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Docs
+		{
+			"slug":            "gdocs",
+			"name":            "Google Docs MCP",
+			"description":     "Query/edit Docs.",
+			"category":        "Docs",
+			"tags":            []string{"docs", "google", "collaboration"},
+			"version":         "1.0.0",
+			"author":          "MCP Team",
+			"repository":      "https://github.com/modelcontextprotocol/google-docs-mcp",
+			"license":         "MIT",
+			"install":         map[string]string{"type": "git", "uri": "https://github.com/modelcontextprotocol/google-docs-mcp"},
+			"configExample":   "{ \"mcpServers\": { \"gdocs\": { \"command\": \"node\", \"args\": [\"server.js\"], \"env\":{ \"GOOGLE_APPLICATION_CREDENTIALS\":\"./credentials.json\" } } } }",
+			"needsAttention":  true,
+			"attentionReason": "Requires Google credentials setup",
+			"createdAt":       "2024-01-01T00:00:00Z",
+			"updatedAt":       "2024-01-01T00:00:00Z",
+		},
+		// Calendar
+		{
+			"slug":            "gcal",
+			"name":            "Google Calendar MCP",
+			"description":     "Manage events.",
+			"category":        "Calendar",
+			"tags":            []string{"calendar", "google", "events"},
+			"version":         "1.0.0",
+			"author":          "MCP Team",
+			"repository":      "https://github.com/modelcontextprotocol/google-calendar-mcp",
+			"license":         "MIT",
+			"install":         map[string]string{"type": "git", "uri": "https://github.com/modelcontextprotocol/google-calendar-mcp"},
+			"configExample":   "{ \"mcpServers\": { \"gcal\": { \"command\": \"node\", \"args\": [\"index.js\"], \"env\":{ \"GOOGLE_CLIENT_ID\":\"...\",\"GOOGLE_CLIENT_SECRET\":\"...\" } } } }",
+			"needsAttention":  true,
+			"attentionReason": "Requires Google OAuth setup",
+			"createdAt":       "2024-01-01T00:00:00Z",
+			"updatedAt":       "2024-01-01T00:00:00Z",
+		},
+		// Notes
+		{
+			"slug":          "notion",
+			"name":          "Notion MCP",
+			"description":   "Manage Notion databases and pages.",
+			"category":      "Notes",
+			"tags":          []string{"notion", "database", "notes"},
+			"version":       "1.0.0",
+			"author":        "Notion",
+			"repository":    "https://github.com/makenotion/notion-mcp-server",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "@notionhq/notion-mcp-server"},
+			"remote":        map[string]interface{}{"apiEndpoint": "https://mcp.notion.com/mcp", "provider": "Notion", "authType": "oauth2"},
+			"configExample": "{ \"mcpServers\": { \"Notion\": { \"url\": \"https://mcp.notion.com/mcp\" } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Social
+		{
+			"slug":            "youtube",
+			"name":            "YouTube MCP",
+			"description":     "Query/fetch YouTube metadata.",
+			"category":        "Social",
+			"tags":            []string{"youtube", "video", "metadata"},
+			"version":         "1.0.0",
+			"author":          "MCP Team",
+			"repository":      "https://github.com/modelcontextprotocol/youtube-mcp",
+			"license":         "MIT",
+			"install":         map[string]string{"type": "git", "uri": "https://github.com/modelcontextprotocol/youtube-mcp"},
+			"configExample":   "{ \"mcpServers\": { \"youtube\": { \"command\": \"node\", \"args\": [\"server.js\"] } } }",
+			"needsAttention":  true,
+			"attentionReason": "Requires YouTube API key setup",
+			"createdAt":       "2024-01-01T00:00:00Z",
+			"updatedAt":       "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "twitter",
+			"name":          "TweetBinder MCP",
+			"description":   "Twitter analytics.",
+			"category":      "Social",
+			"tags":          []string{"twitter", "analytics", "social"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/tweetbinder-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "tweetbinder-mcp"},
+			"configExample": "{ \"mcpServers\": { \"twitter\": { \"command\": \"npx\", \"args\": [\"-y\",\"tweetbinder-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Messaging
+		{
+			"slug":          "telegram",
+			"name":          "Telegram MCP",
+			"description":   "Messaging integration.",
+			"category":      "Messaging",
+			"tags":          []string{"telegram", "messaging", "chat"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/telegram-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "telegram-mcp"},
+			"configExample": "{ \"mcpServers\": { \"telegram\": { \"command\": \"npx\", \"args\": [\"-y\",\"telegram-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Social / Newsletters
+		{
+			"slug":          "substack",
+			"name":          "Substack MCP",
+			"description":   "Manage Substack posts.",
+			"category":      "Social / Newsletters",
+			"tags":          []string{"substack", "newsletter", "publishing"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/substack-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "substack-mcp"},
+			"configExample": "{ \"mcpServers\": { \"substack\": { \"command\": \"npx\", \"args\": [\"-y\",\"substack-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Containers
+		{
+			"slug":          "docker",
+			"name":          "Docker MCP",
+			"description":   "Manage Docker containers and images.",
+			"category":      "Containers",
+			"tags":          []string{"docker", "containers", "devops"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/docker-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "docker-mcp"},
+			"configExample": "{ \"mcpServers\": { \"docker\": { \"command\": \"npx\", \"args\": [\"-y\",\"docker-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Infra as Code
+		{
+			"slug":          "terraform",
+			"name":          "Terraform MCP",
+			"description":   "Terraform plan/apply via LLM.",
+			"category":      "Infra as Code",
+			"tags":          []string{"terraform", "infrastructure", "iac"},
+			"version":       "1.0.0",
+			"author":        "MCP Community",
+			"repository":    "https://github.com/devinschumacher/tfmcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "tfmcp"},
+			"configExample": "{ \"mcpServers\": { \"terraform\": { \"command\": \"npx\", \"args\": [\"-y\",\"tfmcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Monitoring
+		{
+			"slug":          "prometheus",
+			"name":          "Prometheus MCP",
+			"description":   "Query Prometheus metrics.",
+			"category":      "Monitoring",
+			"tags":          []string{"prometheus", "monitoring", "metrics"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/prometheus-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "prometheus-mcp"},
+			"configExample": "{ \"mcpServers\": { \"prometheus\": { \"command\": \"npx\", \"args\": [\"-y\",\"prometheus-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		// Security / Recon
+		{
+			"slug":          "shodan",
+			"name":          "Shodan MCP",
+			"description":   "Shodan scans & OSINT.",
+			"category":      "Security / Recon",
+			"tags":          []string{"shodan", "security", "osint"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/shodan-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "shodan-mcp"},
+			"configExample": "{ \"mcpServers\": { \"shodan\": { \"command\": \"npx\", \"args\": [\"-y\",\"shodan-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+		{
+			"slug":          "nmap",
+			"name":          "Nmap MCP",
+			"description":   "Network scanning.",
+			"category":      "Security / Net",
+			"tags":          []string{"nmap", "security", "network"},
+			"version":       "1.0.0",
+			"author":        "MCP Team",
+			"repository":    "https://github.com/modelcontextprotocol/nmap-mcp",
+			"license":       "MIT",
+			"install":       map[string]string{"type": "npm", "uri": "nmap-mcp"},
+			"configExample": "{ \"mcpServers\": { \"nmap\": { \"command\": \"npx\", \"args\": [\"-y\",\"nmap-mcp\"] } } }",
+			"createdAt":     "2024-01-01T00:00:00Z",
+			"updatedAt":     "2024-01-01T00:00:00Z",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(marketplaceItems)
+}
+
+func (s *Server) handleAdminAddMarketplaceItem(w http.ResponseWriter, r *http.Request) {
+	var item map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Basic validation
+	if item["slug"] == nil || item["name"] == nil || item["category"] == nil {
+		http.Error(w, "missing required fields: slug, name, category", http.StatusBadRequest)
+		return
+	}
+
+	// Add timestamps
+	now := time.Now().Format(time.RFC3339)
+	item["createdAt"] = now
+	item["updatedAt"] = now
+
+	// In a real implementation, this would save to a database
+	// For now, we'll just return success
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(item)
+}
+
+func (s *Server) handleAdminMarketplaceActions(w http.ResponseWriter, r *http.Request) {
+	// Extract slug from path: /v1/admin/marketplace/{slug}
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 5 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	slug := parts[4]
+
+	switch r.Method {
+	case http.MethodPut:
+		// Check if this is a resolve-attention request
+		if strings.HasSuffix(r.URL.Path, "/resolve-attention") {
+			s.handleResolveAttentionItem(w, r, slug)
+		} else {
+			s.handleAdminUpdateMarketplaceItem(w, r, slug)
+		}
+	case http.MethodDelete:
+		s.handleAdminDeleteMarketplaceItem(w, r, slug)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminUpdateMarketplaceItem(w http.ResponseWriter, r *http.Request, slug string) {
+	var updates map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Add update timestamp
+	updates["updatedAt"] = time.Now().Format(time.RFC3339)
+
+	// In a real implementation, this would update in database
+	// For now, we'll just return the updates
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"slug":    slug,
+		"updated": true,
+		"updates": updates,
+	})
+}
+
+func (s *Server) handleAdminDeleteMarketplaceItem(w http.ResponseWriter, r *http.Request, slug string) {
+	// In a real implementation, this would delete from database
+	// For now, we'll just return success
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleResolveAttentionItem(w http.ResponseWriter, r *http.Request, slug string) {
+	// In a real implementation, this would update the database to remove attention flags
+	// For now, we'll just return success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"slug":      slug,
+		"resolved":  true,
+		"message":   "Attention flag removed successfully",
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }

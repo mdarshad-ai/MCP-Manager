@@ -4,7 +4,7 @@ export type ServerRow = {
   status: "ready" | "degraded" | "down";
 };
 
-const BASE = "http://127.0.0.1:7099";
+const BASE = "http://127.0.0.1:8080";
 
 export async function fetchServers(): Promise<ServerRow[]> {
   const r = await fetch(`${BASE}/v1/servers`);
@@ -549,4 +549,85 @@ export async function finalizeInstallationAdvanced(jobId: string): Promise<void>
     method: "POST",
   });
   if (!r.ok) throw new Error(`advanced install finalize failed: ${r.status}`);
+}
+
+// Admin Panel API Functions
+
+export type InstalledServer = {
+  slug: string;
+  name: string;
+  status: 'running' | 'stopped' | 'error';
+  path: string;
+  installDate?: string;
+  version?: string;
+};
+
+export type MarketplaceItem = {
+  slug: string;
+  name: string;
+  category: string;
+  description: string;
+  repoUrl?: string;
+  docsUrl?: string;
+  install?: { type: string; uri: string };
+  remote?: { apiEndpoint: string; provider: string; authType?: string };
+  configExample?: string;
+  tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export async function listInstalledServers(): Promise<InstalledServer[]> {
+  const r = await fetch(`${BASE}/v1/admin/servers`);
+  if (!r.ok) throw new Error(`list installed servers failed: ${r.status}`);
+  return r.json();
+}
+
+export async function deleteInstalledServer(slug: string): Promise<void> {
+  const r = await fetch(`${BASE}/v1/admin/servers/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+  });
+  if (!r.ok) throw new Error(`delete installed server failed: ${r.status}`);
+}
+
+export async function listMarketplaceItems(): Promise<MarketplaceItem[]> {
+  const r = await fetch(`${BASE}/v1/admin/marketplace`);
+  if (!r.ok) throw new Error(`list marketplace items failed: ${r.status}`);
+  return r.json();
+}
+
+export async function addMarketplaceItem(item: Omit<MarketplaceItem, 'createdAt' | 'updatedAt'>): Promise<MarketplaceItem> {
+  const r = await fetch(`${BASE}/v1/admin/marketplace`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(item),
+  });
+  if (!r.ok) throw new Error(`add marketplace item failed: ${r.status}`);
+  return r.json();
+}
+
+export async function updateMarketplaceItem(slug: string, item: Partial<MarketplaceItem>): Promise<MarketplaceItem> {
+  const r = await fetch(`${BASE}/v1/admin/marketplace/${encodeURIComponent(slug)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(item),
+  });
+  if (!r.ok) throw new Error(`update marketplace item failed: ${r.status}`);
+  return r.json();
+}
+
+export async function deleteMarketplaceItem(slug: string): Promise<void> {
+  const r = await fetch(`${BASE}/v1/admin/marketplace/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+  });
+  if (!r.ok) throw new Error(`delete marketplace item failed: ${r.status}`);
+}
+
+export async function resolveAttentionItem(slug: string): Promise<{resolved: boolean; message: string; timestamp: string}> {
+  const r = await fetch(`${BASE}/v1/admin/marketplace/${encodeURIComponent(slug)}/resolve-attention`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" }
+  });
+  if (!r.ok) throw new Error(`resolve attention failed: ${r.status}`);
+  return r.json();
 }
